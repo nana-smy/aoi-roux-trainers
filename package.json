@@ -2,6 +2,7 @@
   "name": "cmll-trainer",
   "version": "1.7.0",
   "private": true,
+  "homepage": "https://polo-aoi.github.io/aoi-roux-trainers",
   "dependencies": {
     "@emotion/react": "^11.4.1",
     "@emotion/styled": "^11.3.0",
@@ -36,7 +37,7 @@
     "sr-visualizer": "^1.0.8",
     "three": "^0.125.0",
     "typeface-roboto": "0.0.75",
-    "typeface-roboto-mono": "0.0.75",
+    "typeface-roboto-mono": "^0.0.75",
     "typescript": "^3.9.10",
     "worker-plugin": "^5.0.1"
   },
@@ -48,7 +49,8 @@
     "start2": "react-app-rewired start",
     "deploy": "gh-pages -d build",
     "deploy2": "gh-pages -d build;gh-pages -d build -o gitee",
-    "publish": "npm run build; npm run deploy"
+    "publish": "npm run build; npm run deploy",
+    "electron:build": "npm run build && electron-builder --win portable --mac --linux"
   },
   "eslintConfig": {
     "extends": "react-app"
@@ -65,12 +67,39 @@
       "last 1 safari version"
     ]
   },
-  "homepage": "https://polo-aoi.github.io/aoi-roux-trainers",
   "devDependencies": {
     "@pmmmwh/react-refresh-webpack-plugin": "^0.4.3",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
     "eslint": "^7.32.0",
     "gh-pages": "^2.2.0",
     "react-app-rewired": "^2.1.8",
     "react-refresh": "^0.8.3"
+  },
+  "build": {
+    "appId": "com.aoi.roux-trainers",
+    "productName": "Aoi Roux Trainers",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "build/**/*",
+      "electron/**/*",
+      "node_modules/**/*"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": ["AppImage", "tar.gz"],
+      "category": "Utility"
+    }
   }
 }
