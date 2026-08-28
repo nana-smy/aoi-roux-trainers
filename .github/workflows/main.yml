@@ -19,17 +19,15 @@ jobs:
           - os: windows-latest
             target: win
             artifact_name: AoiRouxTrainers-win
-            ext: exe
           - os: ubuntu-22.04
             target: linux
             artifact_name: AoiRouxTrainers-linux
-            ext: tar.gz
           - os: macos-14
             target: mac
             artifact_name: AoiRouxTrainers-mac
-            ext: zip
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -41,14 +39,6 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
-
       - name: Install dependencies
         run: npm ci
 
@@ -56,9 +46,10 @@ jobs:
         run: npm run build
 
       - name: Build Electron app (${{ matrix.target }})
+        run: npx electron-builder --${{ matrix.target }}
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
-        run: npx electron-builder --${{ matrix.target }}
+          ELECTRON_CACHE: /tmp/electron-cache
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -71,7 +62,6 @@ jobs:
     needs: build
     runs-on: ubuntu-22.04
     if: startsWith(github.ref, 'refs/tags/v')
-
     permissions:
       contents: write
 
@@ -84,7 +74,7 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p dist
-          find release -type f -name "*" -exec cp {} dist/ \;
+          find release -type f -exec cp -r {} dist/ \;
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
