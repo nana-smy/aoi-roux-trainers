@@ -27,7 +27,7 @@ jobs:
             artifact_name: AoiRouxTrainers-mac
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -49,7 +49,6 @@ jobs:
         run: npx electron-builder --${{ matrix.target }}
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
-          ELECTRON_CACHE: /tmp/electron-cache
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
