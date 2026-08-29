@@ -42,9 +42,8 @@ jobs:
           CI: "false"
 
       - name: Build electron
-        run: npx electron-builder --${{ matrix.target }}
+        run: npx electron-builder --${{ matrix.target }} --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
       - uses: actions/upload-artifact@v4
