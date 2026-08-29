@@ -27,7 +27,7 @@ jobs:
             artifact_name: AoiRouxTrainers-mac
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -43,10 +43,14 @@ jobs:
 
       - name: Build web app
         run: npm run build
+        env:
+          # Force non-interactive mode
+          CI: false
 
       - name: Build Electron app (${{ matrix.target }})
-        run: npx electron-builder --${{ matrix.target }}
+        run: npx electron-builder --${{ matrix.target }} --${{ matrix.target }}
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
       - name: Upload artifact
