@@ -2,8 +2,10 @@
   "name": "cmll-trainer",
   "version": "1.7.0",
   "private": true,
-  "homepage": "https://polo-aoi.github.io/aoi-roux-trainers",
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@emotion/react": "^11.4.1",
     "@emotion/styled": "^11.3.0",
     "@koale/useworker": "^4.1.2",
@@ -37,7 +39,7 @@
     "sr-visualizer": "^1.0.8",
     "three": "^0.125.0",
     "typeface-roboto": "0.0.75",
-    "typeface-roboto-mono": "^0.0.75",
+    "typeface-roboto-mono": "0.0.75",
     "typescript": "^3.9.10",
     "worker-plugin": "^5.0.1"
   },
@@ -50,7 +52,8 @@
     "deploy": "gh-pages -d build",
     "deploy2": "gh-pages -d build;gh-pages -d build -o gitee",
     "publish": "npm run build; npm run deploy",
-    "electron:build": "npm run build && electron-builder --win portable --mac --linux"
+    "electron:build": "npm run build && electron-builder --win portable",
+    "electron:dev": "npm run build && electron . --no-sandbox"
   },
   "eslintConfig": {
     "extends": "react-app"
@@ -67,15 +70,17 @@
       "last 1 safari version"
     ]
   },
+  "homepage": ".",
   "devDependencies": {
     "@pmmmwh/react-refresh-webpack-plugin": "^0.4.3",
-    "electron": "^28.3.3",
-    "electron-builder": "^24.13.3",
+    "electron": "28.3.3",
+    "electron-builder": "24.13.3",
     "eslint": "^7.32.0",
     "gh-pages": "^2.2.0",
     "react-app-rewired": "^2.1.8",
     "react-refresh": "^0.8.3"
   },
+  "main": "electron/main.js",
   "build": {
     "appId": "com.aoi.roux-trainers",
     "productName": "Aoi Roux Trainers",
@@ -83,23 +88,38 @@
       "output": "release"
     },
     "files": [
-      "build/**/*",
-      "electron/**/*",
-      "node_modules/**/*"
+      "build",
+      "electron",
+      "node_modules"
     ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "AoiRouxTrainers-${version}.exe"
+    },
+    "asar": true,
     "extraMetadata": {
       "main": "electron/main.js"
     },
-    "win": {
-      "target": "portable"
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Utility"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.utilities"
-    },
-    "linux": {
-      "target": ["AppImage", "tar.gz"],
-      "category": "Utility"
     }
   }
 }
