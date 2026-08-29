@@ -18,69 +18,62 @@ jobs:
         include:
           - os: windows-latest
             target: win
-            artifact_name: AoiRouxTrainers-win
           - os: ubuntu-22.04
             target: linux
-            artifact_name: AoiRouxTrainers-linux
           - os: macos-14
             target: mac
-            artifact_name: AoiRouxTrainers-mac
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm install
 
-      - name: Build web app
-        run: NODE_OPTIONS="--max-old-space-size=4096" CI=false npm run build
+      - name: Build web
+        run: npm run build
         env:
-          CI: false
+          CI: "false"
 
-      - name: Build Electron app (${{ matrix.target }})
+      - name: Build electron
         run: npx electron-builder --${{ matrix.target }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: release/*
-          retention-days: 30
+          name: ${{ matrix.target }}-artifact
+          path: release/
+          retention-days: 7
 
   release:
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
 
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
         with:
           path: release
 
-      - name: Flatten artifacts
+      - name: Flatten
         run: |
           mkdir -p dist
           find release -type f -exec cp -r {} dist/ \;
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+      - uses: softprops/action-gh-release@v1
         with:
           files: dist/*
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
