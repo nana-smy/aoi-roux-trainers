@@ -5,10 +5,26 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - win
+          - linux
+          - mac
+          - android
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+  ELECTRON_CACHE: /tmp/electron-cache
 
 jobs:
   build:
@@ -28,8 +44,9 @@ jobs:
           - os: ubuntu-22.04
             target: android
             artifact_name: AoiRouxTrainers-android
-
     runs-on: ${{ matrix.os }}
+    # Skip if workflow_dispatch and platform doesn't match
+    if: github.event.inputs.platform == '' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.target
     timeout-minutes: 30
 
     steps:
@@ -51,9 +68,6 @@ jobs:
       - name: Build Electron app
         if: matrix.target != 'android'
         run: npx electron-builder --${{ matrix.target }} --publish never
-        env:
-          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
-          ELECTRON_CACHE: /tmp/electron-cache
 
       - name: Setup Android SDK
         if: matrix.target == 'android'
@@ -67,14 +81,23 @@ jobs:
           ./gradlew assembleDebug
 
       - name: Upload artifact
+        if: matrix.target != 'android'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            release/*.zip
-            release/*.AppImage
-            release/*.tar.gz
-            release/*.dmg
+            release/Aoi.Roux.Trainers-1.7.0-win.zip
+            release/Aoi.Roux.Trainers-1.7.0.AppImage
+            release/cmll-trainer-1.7.0.tar.gz
+            release/Aoi.Roux.Trainers-1.7.0-arm64.dmg
+          retention-days: 30
+
+      - name: Upload Android artifact
+        if: matrix.target == 'android'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
             android/app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
