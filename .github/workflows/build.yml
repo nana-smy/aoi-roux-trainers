@@ -49,7 +49,7 @@ jobs:
 
       - name: Build Electron app
         if: matrix.target != 'android'
-        run: npx electron-builder --${{ matrix.target }}
+        run: npx electron-builder --${{ matrix.target }} --publish never
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
           ELECTRON_CACHE: /tmp/electron-cache
