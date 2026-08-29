@@ -73,6 +73,7 @@ jobs:
           path: |
             release/*.zip
             release/*.AppImage
+            release/*.tar.gz
             release/*.dmg
             android/app/build/outputs/apk/debug/*.apk
           retention-days: 30
@@ -93,7 +94,7 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p dist
-          find release -type f \( -name "*.zip" -o -name "*.AppImage" -o -name "*.dmg" -o -name "*.apk" \) -exec cp {} dist/ \;
+          find release -type f \( -name "*.zip" -o -name "*.AppImage" -o -name "*.tar.gz" -o -name "*.dmg" -o -name "*.apk" \) -exec cp {} dist/ \;
           echo "Files to upload:"
           ls -lh dist/
 
