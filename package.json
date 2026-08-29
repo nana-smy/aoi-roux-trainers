@@ -73,8 +73,8 @@
   "homepage": ".",
   "devDependencies": {
     "@pmmmwh/react-refresh-webpack-plugin": "^0.4.3",
-    "electron": "28.3.3",
-    "electron-builder": "24.13.3",
+    "electron": "31.7.7",
+    "electron-builder": "26.15.3",
     "eslint": "^7.32.0",
     "gh-pages": "^2.2.0",
     "react-app-rewired": "^2.1.8",
@@ -95,13 +95,12 @@
     "win": {
       "target": [
         {
-          "target": "dir",
-          "arch": ["x64"]
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
         }
       ]
-    },
-    "portable": {
-      "artifactName": "AoiRouxTrainers-${version}.exe"
     },
     "asar": true,
     "extraMetadata": {
@@ -109,15 +108,13 @@
     },
     "linux": {
       "target": [
-        "AppImage",
-        "tar.gz"
+        "AppImage"
       ],
       "category": "Utility"
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
       ],
       "category": "public.app-category.utilities"
     }
