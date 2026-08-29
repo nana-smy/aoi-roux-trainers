@@ -40,7 +40,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -57,7 +56,10 @@ jobs:
 
       - name: Setup Android SDK
         if: matrix.target == 'android'
-        uses: android-actions/setup-android@v3
+        run: |
+          brew install --cask android-sdk 2>/dev/null || true
+          echo "ANDROID_SDK_ROOT=$HOME/Library/Android/sdk" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$HOME/Library/Android/sdk" >> $GITHUB_ENV
 
       - name: Build Android APK
         if: matrix.target == 'android'
@@ -65,6 +67,9 @@ jobs:
           npx cap sync android
           cd android
           ./gradlew assembleDebug
+        env:
+          ANDROID_SDK_ROOT: /Users/runner/Library/Android/sdk
+          ANDROID_HOME: /Users/runner/Library/Android/sdk
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
