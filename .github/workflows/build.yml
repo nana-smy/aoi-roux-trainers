@@ -25,6 +25,9 @@ jobs:
           - os: macos-14
             target: mac
             artifact_name: AoiRouxTrainers-mac
+          - os: ubuntu-22.04
+            target: android
+            artifact_name: AoiRouxTrainers-android
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -45,17 +48,23 @@ jobs:
       - name: Build web app
         run: npm run build
 
-      - name: Build Electron app (${{ matrix.target }})
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          npx electron-builder --${{ matrix.target }}
-          if [ "${{ matrix.target }}" = "win" ]; then
-            cd release
-            powershell -Command "Compress-Archive -Path 'win-unpacked/*' -DestinationPath 'Aoi.Roux.Trainers-${VERSION}-win.zip' -Force"
-          fi
+      - name: Build Electron app
+        if: matrix.target != 'android'
+        run: npx electron-builder --${{ matrix.target }}
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
           ELECTRON_CACHE: /tmp/electron-cache
+
+      - name: Setup Android SDK
+        if: matrix.target == 'android'
+        uses: android-actions/setup-android@v3
+
+      - name: Build Android APK
+        if: matrix.target == 'android'
+        run: |
+          npx cap sync android
+          cd android
+          ./gradlew assembleDebug
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -65,6 +74,7 @@ jobs:
             release/*.zip
             release/*.AppImage
             release/*.dmg
+            android/app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
   release:
@@ -83,7 +93,7 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p dist
-          find release -type f \( -name "*.zip" -o -name "*.AppImage" -o -name "*.dmg" \) -exec cp {} dist/ \;
+          find release -type f \( -name "*.zip" -o -name "*.AppImage" -o -name "*.dmg" -o -name "*.apk" \) -exec cp {} dist/ \;
           echo "Files to upload:"
           ls -lh dist/
 
