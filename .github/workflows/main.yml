@@ -42,13 +42,12 @@ jobs:
         run: npm install
 
       - name: Build web app
-        run: npm run build
+        run: NODE_OPTIONS="--max-old-space-size=4096" CI=false npm run build
         env:
-          # Force non-interactive mode
           CI: false
 
       - name: Build Electron app (${{ matrix.target }})
-        run: npx electron-builder --${{ matrix.target }} --${{ matrix.target }}
+        run: npx electron-builder --${{ matrix.target }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
