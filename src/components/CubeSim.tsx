@@ -3,7 +3,8 @@ import React, { useEffect } from 'react'
 import { FaceletCubeT, Face } from "../lib/Defs";
 import * as THREE from 'three';
 import { arrayEqual } from '../lib/Math';
-import * as chroma from 'chroma-js';
+import chroma from 'chroma-js';
+// @ts-ignore - chroma.mix is a module-level function present in runtime
 import { OrbitControls } from '../lib/three/OrbitControls';
 
 type Config = {
