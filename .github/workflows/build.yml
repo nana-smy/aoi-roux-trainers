@@ -86,10 +86,10 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            release/Aoi.Roux.Trainers-1.7.0-win.zip
-            release/Aoi.Roux.Trainers-1.7.0.AppImage
-            release/cmll-trainer-1.7.0.tar.gz
-            release/Aoi.Roux.Trainers-1.7.0-arm64.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.tar.gz
+            release/*.dmg
           retention-days: 30
 
       - name: Upload Android artifact
@@ -117,7 +117,9 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p dist
-          find release -type f \( -name "*.zip" -o -name "*.AppImage" -o -name "*.tar.gz" -o -name "*.dmg" -o -name "*.apk" \) -exec cp {} dist/ \;
+          for dir in release/*/; do
+            cp -r "$dir"* dist/ 2>/dev/null || true
+          done
           echo "Files to upload:"
           ls -lh dist/
 
