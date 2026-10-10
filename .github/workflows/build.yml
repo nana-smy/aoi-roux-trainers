@@ -25,6 +25,8 @@ concurrency:
 env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   ELECTRON_CACHE: /tmp/electron-cache
+  NODE_MIRROR: https://npmmirror.com/mirrors/node/
+  NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
 
 jobs:
   build:
@@ -55,6 +57,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          node-mirror: https://npmmirror.com/mirrors/node/
           cache: 'npm'
 
       - name: Install dependencies
