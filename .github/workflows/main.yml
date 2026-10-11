@@ -72,7 +72,7 @@ jobs:
 
       - name: Sync Capacitor
         if: matrix.target == 'android'
-        run: npx cap sync android
+        run: npx cap sync android --verbose 2>&1 || (echo "=== cap sync failed, checking android dir ===" && ls android/ 2>/dev/null || echo "android dir not found" && exit 1)
 
       - name: Build Android APK
         if: matrix.target == 'android'
