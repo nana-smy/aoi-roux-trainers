@@ -55,10 +55,24 @@ jobs:
 
       - name: Setup Android SDK
         if: matrix.target == 'android'
-        uses: android/setup-java@v3
-        with:
-          distribution: temurin
-          java-version: 17
+        run: |
+          echo "Checking Android SDK..."
+          if [ -d "/opt/android-sdk" ]; then
+            echo "SDK found at /opt/android-sdk"
+            ls /opt/android-sdk
+          elif [ -d "$ANDROID_HOME" ]; then
+            echo "SDK found at $ANDROID_HOME"
+          else
+            echo "Installing Android SDK from Google..."
+            mkdir -p /opt/android-sdk/cmdline-tools
+            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline-tools.zip
+            unzip -q /tmp/cmdline-tools.zip -d /opt/android-sdk/cmdline-tools/
+            mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest 2>/dev/null || true
+            yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+            /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" --sdk_root=/opt/android-sdk
+            echo "ANDROID_HOME=/opt/android-sdk" >> $GITHUB_ENV
+            echo "ANDROID_SDK_ROOT=/opt/android-sdk" >> $GITHUB_ENV
+          fi
 
       - name: Build Android APK
         if: matrix.target == 'android'
