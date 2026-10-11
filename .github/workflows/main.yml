@@ -18,18 +18,14 @@ on:
           - mac
           - android
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
-  ANDROID_HOME: /opt/android-sdk
-  ANDROID_SDK_ROOT: /opt/android-sdk
 
 jobs:
   build:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -42,10 +38,6 @@ jobs:
             target: mac
           - os: ubuntu-22.04
             target: android
-
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    if: github.event.inputs.platform == '' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.target
 
     steps:
       - uses: actions/checkout@v4
@@ -65,31 +57,29 @@ jobs:
       - name: Init Capacitor
         if: matrix.target == 'android'
         run: |
-          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation
+          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation || echo "already initialized"
 
       - name: Add Android platform
         if: matrix.target == 'android'
         run: |
-          npx cap add android || echo "Android platform may already exist"
+          npx cap add android || echo "already added"
 
       - name: Verify Android SDK
         if: matrix.target == 'android'
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          ls -la $ANDROID_HOME 2>/dev/null || ls -la /opt/android-sdk 2>/dev/null || echo "SDK not found"
+          ls /opt/android-sdk 2>/dev/null || echo "SDK not found at /opt/android-sdk"
 
       - name: Sync Capacitor
         if: matrix.target == 'android'
-        run: |
-          npx cap sync android
+        run: npx cap sync android
 
       - name: Build Android APK
         if: matrix.target == 'android'
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           cd android
-          ./gradlew assembleDebug
+          ANDROID_HOME=/opt/android-sdk ./gradlew assembleDebug
 
       - name: Build electron
         if: matrix.target != 'android'
@@ -127,7 +117,7 @@ jobs:
         with:
           path: release
 
-      - name: Flatten
+      - name: Flatten artifacts
         run: |
           mkdir -p dist
           find release -type f -exec cp -r {} dist/ \;
@@ -136,4 +126,4 @@ jobs:
         with:
           files: dist/*
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: \{\{ secrets.GITHUB_TOKEN \}\}
