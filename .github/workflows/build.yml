@@ -25,8 +25,6 @@ concurrency:
 env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   ELECTRON_CACHE: /tmp/electron-cache
-  NODE_MIRROR: https://npmmirror.com/mirrors/node/
-  NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
 
 jobs:
   build:
@@ -47,6 +45,8 @@ jobs:
             target: android
             artifact_name: AoiRouxTrainers-android
     runs-on: ${{ matrix.os }}
+    # Skip if workflow_dispatch and platform doesn't match
+    if: github.event.inputs.platform == '' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.target
     timeout-minutes: 30
 
     steps:
@@ -57,12 +57,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build web app
-        run: CI=false npm run build
+        run: npm run build
 
       - name: Build Electron app
         if: matrix.target != 'android'
@@ -85,10 +86,10 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            release/*.zip
-            release/*.AppImage
-            release/*.tar.gz
-            release/*.dmg
+            release/Aoi.Roux.Trainers-1.7.0-win.zip
+            release/Aoi.Roux.Trainers-1.7.0.AppImage
+            release/cmll-trainer-1.7.0.tar.gz
+            release/Aoi.Roux.Trainers-1.7.0-arm64.dmg
           retention-days: 30
 
       - name: Upload Android artifact
@@ -116,9 +117,7 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p dist
-          for dir in release/*/; do
-            cp -r "$dir"* dist/ 2>/dev/null || true
-          done
+          find release -type f \( -name "*.zip" -o -name "*.AppImage" -o -name "*.tar.gz" -o -name "*.dmg" -o -name "*.apk" \) -exec cp {} dist/ \;
           echo "Files to upload:"
           ls -lh dist/
 
