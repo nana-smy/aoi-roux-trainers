@@ -57,7 +57,7 @@ jobs:
       - name: Init Capacitor
         if: matrix.target == 'android'
         run: |
-          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation || echo "already initialized"
+          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build
 
       - name: Add Android platform
         if: matrix.target == 'android'
