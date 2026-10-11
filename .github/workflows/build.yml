@@ -54,20 +54,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js 20
-        run: |
-          NODE_VERSION=v20.18.0
-          case "$RUNNER_OS" in
-            Linux)
-              curl -fsSL https://npmmirror.com/mirrors/node/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1 ;;
-            macOS)
-              curl -fsSL https://npmmirror.com/mirrors/node/${NODE_VERSION}/node-${NODE_VERSION}-darwin-x64.tar.gz | tar -xz -C /usr/local --strip-components=1 ;;
-            Windows)
-              curl -fsSL https://npmmirror.com/mirrors/node/${NODE_VERSION}/node-${NODE_VERSION}-win-x64.zip -o node.zip
-              unzip -q node.zip -C /c/nodejs
-              echo "C:\tools\nodejs" >> $GITHUB_PATH ;;
-          esac
-          node -v
-          npm -v
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
