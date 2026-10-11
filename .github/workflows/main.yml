@@ -42,6 +42,7 @@ jobs:
             target: mac
           - os: ubuntu-22.04
             target: android
+
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
 
@@ -60,11 +61,15 @@ jobs:
         env:
           CI: "false"
 
-      - name: Build electron
-        if: matrix.target != 'android'
-        run: npx electron-builder --${{ matrix.target }} --publish never
-        env:
-          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+      - name: Init Capacitor
+        if: matrix.target == 'android'
+        run: |
+          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation
+
+      - name: Add Android platform
+        if: matrix.target == 'android'
+        run: |
+          npx cap add android || echo "Android platform may already exist"
 
       - name: Verify Android SDK
         if: matrix.target == 'android'
@@ -72,14 +77,24 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           ls -la $ANDROID_HOME 2>/dev/null || ls -la /opt/android-sdk 2>/dev/null || echo "SDK not found"
 
+      - name: Sync Capacitor
+        if: matrix.target == 'android'
+        run: |
+          npx cap sync android
+
       - name: Build Android APK
         if: matrix.target == 'android'
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          npx cap sync android
           cd android
-          ./gradlew assembleDebug --info 2>&1 | tail -50
+          ./gradlew assembleDebug
+
+      - name: Build electron
+        if: matrix.target != 'android'
+        run: npx electron-builder --${{ matrix.target }} --publish never
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
       - name: Upload artifact
         if: matrix.target != 'android'
