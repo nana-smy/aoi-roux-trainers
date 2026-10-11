@@ -13,6 +13,8 @@ concurrency:
 env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
+  ANDROID_HOME: /opt/android-sdk
+  ANDROID_SDK_ROOT: /opt/android-sdk
 
 jobs:
   build:
@@ -53,23 +55,12 @@ jobs:
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
-      - name: Setup Android SDK
+      - name: Verify Android SDK
         if: matrix.target == 'android'
         run: |
-          echo "Checking Android SDK..."
-          if [ -d "/opt/android-sdk" ] && [ -d "/opt/android-sdk/platforms" ]; then
-            echo "Android SDK already available at /opt/android-sdk"
-          else
-            echo "Installing Android SDK..."
-            mkdir -p /opt/android-sdk/cmdline-tools
-            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline-tools.zip
-            unzip -q /tmp/cmdline-tools.zip -d /opt/android-sdk/cmdline-tools/
-            mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest 2>/dev/null || true
-            yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-            /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" --sdk_root=/opt/android-sdk
-            echo "ANDROID_HOME=/opt/android-sdk" >> $GITHUB_ENV
-            echo "ANDROID_SDK_ROOT=/opt/android-sdk" >> $GITHUB_ENV
-          fi
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la $ANDROID_HOME 2>/dev/null || echo "SDK not at $ANDROID_HOME"
+          ls -la /opt/android-sdk 2>/dev/null || echo "SDK not at /opt/android-sdk"
 
       - name: Build Android APK
         if: matrix.target == 'android'
