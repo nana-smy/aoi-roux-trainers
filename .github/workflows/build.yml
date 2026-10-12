@@ -43,7 +43,6 @@ jobs:
             target: android
             artifact_name: AoiRouxTrainers-android
     runs-on: ${{ matrix.os }}
-    if: github.event.inputs.platform == null || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.target
     timeout-minutes: 45
 
     steps:
