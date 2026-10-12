@@ -22,7 +22,7 @@ concurrency:
 env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   ELECTRON_CACHE: /tmp/electron-cache
-  NODE_OPTIONS: --max-old-space-size=4096
+  NODE_OPTIONS: --max-old-space-size=4096 --openssl-legacy-provider
 
 jobs:
   build:
@@ -128,4 +128,4 @@ jobs:
           files: dist/*
           generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: *** secrets.GITHUB_TOKEN }}
