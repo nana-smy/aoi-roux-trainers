@@ -21,6 +21,7 @@ on:
 env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
+  NODE_OPTIONS: --max-old-space-size=4096 --openssl-legacy-provider
 
 jobs:
   build:
@@ -57,12 +58,12 @@ jobs:
       - name: Init Capacitor
         if: matrix.target == 'android'
         run: |
-          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build || echo "already initialized"
+          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation || true
 
       - name: Add Android platform
         if: matrix.target == 'android'
         run: |
-          npx cap add android || echo "already added"
+          npx cap add android --skip-validation || true
 
       - name: Verify Android SDK
         if: matrix.target == 'android'
@@ -72,7 +73,7 @@ jobs:
 
       - name: Sync Capacitor
         if: matrix.target == 'android'
-        run: npx cap sync android --verbose 2>&1 || (echo "=== cap sync failed, checking android dir ===" && ls android/ 2>/dev/null || echo "android dir not found" && exit 1)
+        run: npx cap sync android
 
       - name: Build Android APK
         if: matrix.target == 'android'
@@ -120,10 +121,10 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p dist
-          find release -type f -exec cp -r {} dist/ \;
+          find release -type f \( -name "*.zip" -o -name "*.AppImage" -o -name "*.tar.gz" -o -name "*.dmg" -o -name "*.apk" \) -exec cp {} dist/ \;
 
       - uses: softprops/action-gh-release@v1
         with:
           files: dist/*
         env:
-          GITHUB_TOKEN: \{\{ secrets.GITHUB_TOKEN \}\}
+          GITHUB_TOKEN: {{ secrets.GITHUB_TOKEN }}
