@@ -22,6 +22,7 @@ concurrency:
 env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   ELECTRON_CACHE: /tmp/electron-cache
+  NODE_OPTIONS: --max-old-space-size=4096
 
 jobs:
   build:
@@ -42,9 +43,8 @@ jobs:
             target: android
             artifact_name: AoiRouxTrainers-android
     runs-on: ${{ matrix.os }}
-    # Skip if workflow_dispatch and platform doesn't match
     if: github.event.inputs.platform == null || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.target
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -54,10 +54,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build web app
         run: npm run build
@@ -69,6 +68,12 @@ jobs:
       - name: Setup Android SDK
         if: matrix.target == 'android'
         uses: android-actions/setup-android@v3
+
+      - name: Initialize Capacitor
+        if: matrix.target == 'android'
+        run: |
+          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation || true
+          npx cap add android --skip-validation || true
 
       - name: Build Android APK
         if: matrix.target == 'android'
