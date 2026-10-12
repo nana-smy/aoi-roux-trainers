@@ -58,29 +58,41 @@ jobs:
       - name: Init Capacitor
         if: matrix.target == 'android'
         run: |
-          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation || true
-
-      - name: Add Android platform
-        if: matrix.target == 'android'
-        run: |
-          npx cap add android --skip-validation || true
-
-      - name: Verify Android SDK
-        if: matrix.target == 'android'
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls /opt/android-sdk 2>/dev/null || echo "SDK not found at /opt/android-sdk"
+          echo "=== Checking if android/ already exists ==="
+          if [ -d "android" ]; then
+            echo "android/ already exists, skipping cap init/add"
+          else
+            echo "=== Running cap init ==="
+            npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation
+            echo "=== Running cap add android ==="
+            npx cap add android --skip-validation
+          fi
+          echo "=== Verifying capacitor.config.ts ==="
+          cat capacitor.config.ts || cat capacitor.config.json 2>/dev/null || echo "No config found"
+          echo "=== Checking android/ directory ==="
+          ls -la android/ 2>/dev/null || echo "android/ NOT FOUND"
 
       - name: Sync Capacitor
         if: matrix.target == 'android'
-        run: npx cap sync android
+        run: |
+          echo "=== Syncing Capacitor to Android ==="
+          npx cap sync android 2>&1
+          SYNC_EXIT=$?
+          echo "cap sync exit code: $SYNC_EXIT"
+          if [ $SYNC_EXIT -ne 0 ]; then
+            echo "=== cap sync FAILED, checking state ==="
+            ls -la android/app/src/main/assets/public/ 2>/dev/null || echo "public assets dir missing"
+            cat android/capacitor.config.json 2>/dev/null || echo "no capacitor.config.json"
+            exit $SYNC_EXIT
+          fi
 
       - name: Build Android APK
         if: matrix.target == 'android'
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
+          ls /opt/android-sdk 2>/dev/null || echo "SDK not at /opt/android-sdk"
           cd android
-          ANDROID_HOME=/opt/android-sdk ./gradlew assembleDebug
+          ANDROID_HOME=/opt/android-sdk ./gradlew assembleDebug --stacktrace 2>&1
 
       - name: Build electron
         if: matrix.target != 'android'
