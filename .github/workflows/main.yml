@@ -55,7 +55,6 @@ jobs:
 
       - name: Setup Android SDK
         if: matrix.target == 'android'
-        uses: android-actions/setup-android@v4
 
       - name: Build Android APK
         if: matrix.target == 'android'
