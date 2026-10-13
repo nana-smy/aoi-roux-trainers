@@ -1,6 +1,9 @@
 name: Build & Release
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       platform:
@@ -22,7 +25,8 @@ concurrency:
 env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   ELECTRON_CACHE: /tmp/electron-cache
-  NODE_OPTIONS: --max-old-space-size=4096 --openssl-legacy-provider
+  NODE_MIRROR: https://npmmirror.com/mirrors/node/
+  NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
 
 jobs:
   build:
@@ -43,24 +47,23 @@ jobs:
             target: android
             artifact_name: AoiRouxTrainers-android
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build web app
         run: npm run build
-        env:
-          CI: "false"
 
       - name: Build Electron app
         if: matrix.target != 'android'
@@ -68,18 +71,7 @@ jobs:
 
       - name: Setup Android SDK
         if: matrix.target == 'android'
-        uses: android-actions/setup-android@v3
-
-      - name: Initialize Capacitor
-        if: matrix.target == 'android'
-        run: |
-          if [ -d "android" ]; then
-            echo "android/ already exists, skipping cap init/add"
-          else
-            npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation
-            npx cap add android --skip-validation
-          fi
-          ls -la android/ 2>/dev/null || echo "android/ NOT FOUND"
+        uses: android-actions/setup-android@v4
 
       - name: Build Android APK
         if: matrix.target == 'android'
@@ -93,7 +85,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: release/
+          path: |
+            release/*.zip
+            release/*.AppImage
+            release/*.tar.gz
+            release/*.dmg
           retention-days: 30
 
       - name: Upload Android artifact
@@ -101,7 +97,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
   release:
@@ -120,7 +117,9 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p dist
-          find release -type f -exec cp -r {} dist/ \;
+          for dir in release/*/; do
+            cp -r "$dir"* dist/ 2>/dev/null || true
+          done
           echo "Files to upload:"
           ls -lh dist/
 
