@@ -5,28 +5,17 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      platform:
-        description: 'Platform to build'
-        required: false
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - win
-          - linux
-          - mac
-          - android
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
-  NODE_OPTIONS: --max-old-space-size=4096 --openssl-legacy-provider
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -40,12 +29,15 @@ jobs:
           - os: ubuntu-22.04
             target: android
 
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
 
       - name: Install deps
         run: npm install
@@ -55,33 +47,22 @@ jobs:
         env:
           CI: "false"
 
-      - name: Init Capacitor
-        if: matrix.target == 'android'
-        run: |
-          if [ -d "android" ]; then
-            echo "android/ already exists, skipping cap init/add"
-          else
-            npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation
-            npx cap add android --skip-validation
-          fi
-          ls -la android/ 2>/dev/null || echo "android/ NOT FOUND"
-
-      - name: Sync Capacitor
-        if: matrix.target == 'android'
-        run: |
-          npx cap sync android
-
-      - name: Build Android APK
-        if: matrix.target == 'android'
-        run: |
-          cd android
-          ./gradlew assembleDebug
-
       - name: Build electron
         if: matrix.target != 'android'
         run: npx electron-builder --${{ matrix.target }} --publish never
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+      - name: Setup Android SDK
+        if: matrix.target == 'android'
+        uses: android-actions/setup-android@v4
+
+      - name: Build Android APK
+        if: matrix.target == 'android'
+        run: |
+          npx cap sync android
+          cd android
+          ./gradlew assembleDebug
 
       - name: Upload artifact
         if: matrix.target != 'android'
@@ -113,7 +94,7 @@ jobs:
         with:
           path: release
 
-      - name: Flatten artifacts
+      - name: Flatten
         run: |
           mkdir -p dist
           find release -type f -exec cp -r {} dist/ \;
