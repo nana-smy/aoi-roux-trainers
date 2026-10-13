@@ -59,6 +59,8 @@ jobs:
 
       - name: Build web app
         run: npm run build
+        env:
+          CI: "false"
 
       - name: Build Electron app
         if: matrix.target != 'android'
