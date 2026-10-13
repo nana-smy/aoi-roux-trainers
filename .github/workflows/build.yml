@@ -49,10 +49,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies
         run: npm install
@@ -71,8 +71,13 @@ jobs:
       - name: Initialize Capacitor
         if: matrix.target == 'android'
         run: |
-          npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation || true
-          npx cap add android --skip-validation || true
+          if [ -d "android" ]; then
+            echo "android/ already exists, skipping cap init/add"
+          else
+            npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation
+            npx cap add android --skip-validation
+          fi
+          ls -la android/ 2>/dev/null || echo "android/ NOT FOUND"
 
       - name: Build Android APK
         if: matrix.target == 'android'
@@ -86,11 +91,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: |
-            release/Aoi.Roux.Trainers-1.7.0-win.zip
-            release/Aoi.Roux.Trainers-1.7.0.AppImage
-            release/cmll-trainer-1.7.0.tar.gz
-            release/Aoi.Roux.Trainers-1.7.0-arm64.dmg
+          path: release/
           retention-days: 30
 
       - name: Upload Android artifact
@@ -98,8 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: |
-            android/app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
   release:
@@ -128,4 +128,4 @@ jobs:
           files: dist/*
           generate_release_notes: true
         env:
-          GITHUB_TOKEN: *** secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
