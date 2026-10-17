@@ -82,6 +82,13 @@ jobs:
           /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" 2>&1 | tail -5
           echo "ANDROID_SDK_ROOT=/opt/android-sdk" >> $GITHUB_ENV
 
+      - name: Setup Java 17
+        if: matrix.target == 'android'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
       - name: Init Capacitor
         if: matrix.target == 'android'
         run: |
@@ -89,9 +96,9 @@ jobs:
             echo "android/ already exists, skipping cap init/add"
           else
             echo "=== Running cap init ==="
-            npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build --skip-validation || true
+            npx cap init AoiRouxTrainers com.aoirouxtrainers.app --web-dir=build || true
             echo "=== Running cap add android ==="
-            npx cap add android --skip-validation || true
+            npx cap add android || true
           fi
           echo "=== Checking android/ directory ==="
           ls -la android/ 2>/dev/null || echo "android/ NOT FOUND"
