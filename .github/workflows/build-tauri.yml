@@ -83,19 +83,24 @@ jobs:
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
 
       # Tauri 打包时会从 github.com releases 下载 NSIS 之类辅助二进制，
-      # 偶尔返回 504（网络抖动）；Rust 编译产物已缓存，重试成本很低。
-      - name: Build Tauri (NSIS)
+      # 有时会持续 504；NSIS 实在拿不到就降级为免安装 exe + zip。
+      - name: Build Tauri (NSIS, portable fallback)
         shell: bash
         run: |
           set -uo pipefail
+          OK=0
           for i in 1 2 3; do
             if npm run tauri -- build --target x86_64-pc-windows-msvc --bundles nsis; then
-              exit 0
+              OK=1
+              break
             fi
-            echo "::warning::attempt $i failed (bundler download 504?), retrying..."
+            echo "::warning::NSIS attempt $i failed (bundler download 504?), retrying..."
             sleep 20
           done
-          exit 1
+          if [ "$OK" != 1 ]; then
+            echo "::warning::NSIS installer could not be bundled (504 on nsis-3.13.zip); falling back to portable build"
+            npm run tauri -- build --target x86_64-pc-windows-msvc --no-bundle
+          fi
 
       - name: Package artifacts
         shell: pwsh
@@ -109,8 +114,12 @@ jobs:
           Copy-Item $bin.FullName "dist/AoiRouxTrainers-tauri-$V-windows-x64.exe"
           Compress-Archive -Path "dist/AoiRouxTrainers-tauri-$V-windows-x64.exe" `
             -DestinationPath "dist/AoiRouxTrainers-tauri-$V-windows-x64-portable.zip" -Force
-          Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" |
-            Copy-Item -Destination "dist/" -Force
+          $nsis = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" -ErrorAction SilentlyContinue
+          if ($nsis) {
+            $nsis | Copy-Item -Destination "dist/" -Force
+          } else {
+            Write-Host "::warning::no NSIS installer produced, shipping portable exe + zip only"
+          }
           Get-ChildItem dist | Format-Table Name, Length
 
       - name: Upload artifact
@@ -366,9 +375,35 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
           npm run tauri -- android init --ci
+          # Gradle wrapper 默认从 services.gradle.org 拉发行包，CI 里常 10s 超时；
+          # 先用带重试的 curl 预下载（优先国内镜像），再把 distributionUrl 指到本地文件。
+          GW=src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
+          if [ -f "$GW" ]; then
+            VER=$(grep -oE 'gradle-[0-9]+\.[0-9]+(\.[0-9]+)?-bin\.zip' "$GW" | head -1 | sed -E 's/^gradle-//; s/-bin\.zip$//')
+            : "${VER:=9.6.1}"
+            DIST="$RUNNER_TEMP/gradle-$VER-bin.zip"
+            OK=0
+            for URL in "https://mirrors.cloud.tencent.com/gradle/gradle-$VER-bin.zip" "https://services.gradle.org/distributions/gradle-$VER-bin.zip"; do
+              if curl -fL --retry 3 --retry-delay 5 --connect-timeout 20 --max-time 600 -o "$DIST" "$URL"; then OK=1; break; fi
+            done
+            [ "$OK" = 1 ] || { echo "ERROR: cannot download gradle $VER"; exit 1; }
+            awk -v d="$DIST" '/^distributionUrl=/{print "distributionUrl=file\\://" d; next} {print}' "$GW" > "$GW.tmp" && mv "$GW.tmp" "$GW"
+            grep -q '^networkTimeout=' "$GW" || echo 'networkTimeout=120000' >> "$GW"
+            cat "$GW"
+          fi
 
       - name: Build APK (release, arm64)
-        run: npm run tauri -- android build --apk --target aarch64
+        shell: bash
+        run: |
+          set -uo pipefail
+          for i in 1 2; do
+            if npm run tauri -- android build --apk --target aarch64; then
+              exit 0
+            fi
+            echo "::warning::attempt $i failed, retrying..."
+            sleep 15
+          done
+          exit 1
 
       - name: Sign APK
         shell: bash
