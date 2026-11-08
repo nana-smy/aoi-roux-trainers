@@ -82,7 +82,7 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
 
-      # Tauri 打包时要从 github.com/tauri-apps/binary-releases 下载 NSIS / WiX 辅助二进制。
+      # Tauri 打包时要从 github.com/tauri-apps/binary-releases 下载 NSIS 辅助二进制。
       # 官方开关 TAURI_BUNDLER_TOOLS_GITHUB_MIRROR：把 https://github.com 前缀换镜像。
       - name: Probe bundler tools mirror
         shell: pwsh
@@ -305,9 +305,9 @@ jobs:
           retention-days: 30
 
   macos:
-    name: Tauri · macOS arm64 + x64
+    name: Tauri · macOS arm64
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 60
     if: github.event_name == 'push' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'mac'
     env:
       CI: "false"
@@ -488,12 +488,14 @@ jobs:
           echo "--- icons after init ---"
           md5sum src-tauri/gen/android/app/src/main/res/mipmap-*/ic_launcher*.png 2>/dev/null || true
           # 自适应图标只有 108dp 画布中间的 72dp 会被显示，直接把整张 logo 铺满会让字显得特别大。
-          # 这里把整张图缩到 62% 再居中放到透明画布上，背景设白色，圆角/圆形遮罩下留出呼吸感。
+          # 这里把整张图缩到 FG_SCALE 再居中放到透明画布上，背景设白色，圆角/圆形遮罩下留出呼吸感。
+          # 试过 62/68/72/76，70% 时字宽约占可见区 65%，既够醒目又不会顶边。
           ICON=public/favicon/web-app-manifest-512x512.png
+          FG_SCALE=70
           FG="$RUNNER_TEMP/android-fg.png"
           IM=$(command -v magick || command -v convert || true)
           if [ -n "$IM" ]; then
-            "$IM" "$ICON" -resize 62% -background none -gravity center -extent 512x512 "$FG"
+            "$IM" "$ICON" -resize "${FG_SCALE}%" -background none -gravity center -extent 512x512 "$FG"
             printf '{"default":"%s","android_fg":"%s","bg_color":"#ffffff"}' \
               "$GITHUB_WORKSPACE/$ICON" "$FG" > "$RUNNER_TEMP/icon.json"
             npm run tauri -- icon "$RUNNER_TEMP/icon.json"
@@ -642,12 +644,6 @@ jobs:
           echo "--- icons after re-running tauri icon ---"
           ls -l src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset 2>/dev/null | head -30 || true
 
-      # 官方移动端做法：模拟器包 + 设备未签名包都要，方便未签设备真机与模拟器验收。
-      - name: Build iOS simulator app
-        shell: bash
-        continue-on-error: true
-        run: npm run tauri -- ios build --target aarch64-sim --no-sign
-
       - name: Build iOS (device arm64, unsigned)
         run: npm run tauri -- ios build --target aarch64 --no-sign
 
@@ -673,8 +669,6 @@ jobs:
           SIM=$(find src-tauri/gen/apple -type d -name "*.app" | grep -i sim | head -1 || true)
           if [ -n "${SIM:-}" ]; then
             ( cd "$(dirname "$SIM")" && zip -qry "$GITHUB_WORKSPACE/dist/AoiRouxTrainers-tauri-$V-ios-simulator.app.zip" "$(basename "$SIM")" )
-          else
-            echo "::warning::no simulator .app produced"
           fi
           ls -lh dist
 
@@ -728,6 +722,6 @@ jobs:
             sleep 15
           done
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --title "$TAG" --tag "$TAG" --generate-notes 2>/dev/null || true
+            gh release create "$TAG" --title "$TAG" --generate-notes
           fi
           gh release upload "$TAG" dist/* --clobber
