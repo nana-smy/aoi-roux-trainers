@@ -11,10 +11,10 @@
 
 ## 触发方式
 
-- 推送 `v*` tag：五平台全部构建，并把 `AoiRouxTrainers-tauri-*` 产物挂到该 Release。
+- 推送 `v*` tag：五平台全部构建，并自动把 `AoiRouxTrainers-tauri-*` 产物挂到该 Release。
 - 手动触发（Actions → **Tauri Build** → Run workflow）：
   - `platform`：`all` / `win` / `linux` / `mac` / `android` / `ios`
-  - `publish`：勾选后把产物上传到对应 Release（仅 tag 构建有效）
+  - `publish`：仅 tag 构建有效，勾选后把产物上传到对应 Release
 
 ## 产物命名
 
@@ -47,7 +47,7 @@ npm run tauri dev                   # 需要另开 npm start（devUrl 指向 300
 - `src-tauri/tauri.conf.json`
   - `frontendDist: ../build`：直接复用 CRA 的 `build/` 目录（`homepage: "."` 已保证资源为相对路径）。
   - `beforeBuildCommand` / `beforeDevCommand` 置空：CRA 构建必须在 `CI=false` 下运行（否则警告即报错），由工作流单独执行。
-  - `identifier: com.aoirouxtrainers.app` 与原有 Capacitor 配置一致；Tauri 的 identifier 不能含 `-`，所以没有沿用 electron 的 `com.aoi.roux-trainers`。
+  - `identifier: com.aoirouxtrainers.app` 与原有 Capacitor 配置保持一致；Tauri 的 identifier 不能含 `-`，所以没有沿用 electron 的 `com.aoi.roux-trainers`。
 - `src-tauri/icons/`、`src-tauri/gen/`、`src-tauri/target/` 均在 `.gitignore` 中，由 CI 生成。
 
 ## Android 签名
@@ -67,3 +67,17 @@ npm run tauri dev                   # 需要另开 npm start（devUrl 指向 300
 ## iOS
 
 无签名构建（`tauri ios build --target aarch64 --no-sign`），产出未签名 `.ipa`，需要用自己的开发者证书重签后才能装到真机。
+
+## CI 环境适配（首轮实跑后补的几处）
+
+Tauri 打包时会从 `github.com/.../releases/download/...` 下载 NSIS、AppRun 等辅助二进制，
+部分 runner 网络下会稳定返回 504，因此工作流做了这些兜底：
+
+| 平台 | 处理 |
+|---|---|
+| Windows | NSIS 打包重试 3 次；仍失败则 `--no-bundle` 出免安装 exe + zip |
+| Linux | AppImage 打包重试 3 次；仍失败则只出 `.deb` + 免安装 `tar.gz` |
+| macOS | 用 `--bundles app,dmg`；找不到 `.app` 时只出 dmg |
+| Android | 不用 `android-actions/setup-android@v3`（其内部 `sdkmanager tools` 已被上游移除）；Gradle 发行包先用 curl 预下载到本地再改 `distributionUrl`；Maven 走阿里云镜像 |
+
+另外 Android 的 APK 构建、Linux/Windows 的打包步骤都带重试，编译产物有 cargo 缓存，重试成本很低。
