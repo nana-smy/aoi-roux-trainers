@@ -185,14 +185,19 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
           set -uo pipefail
+          OK=0
           for i in 1 2 3; do
             if npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles appimage,deb; then
-              exit 0
+              OK=1
+              break
             fi
             echo "::warning::attempt $i failed (bundler download 504?), retrying..."
             sleep 20
           done
-          exit 1
+          if [ "$OK" != 1 ]; then
+            echo "::warning::AppImage bundling failed (504 on AppRun); falling back to deb + portable binary"
+            npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles deb
+          fi
 
       - name: Package artifacts
         shell: bash
@@ -200,8 +205,12 @@ jobs:
           set -euo pipefail
           V=$(node -p "require('./package.json').version")
           mkdir -p dist
-          cp src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage \
-             "dist/AoiRouxTrainers-tauri-$V-linux-x64.AppImage"
+          if ls src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage > /dev/null 2>&1; then
+            cp src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage \
+               "dist/AoiRouxTrainers-tauri-$V-linux-x64.AppImage"
+          else
+            echo "::warning::no AppImage produced, shipping deb + portable tar.gz only"
+          fi
           cp src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb \
              "dist/AoiRouxTrainers-tauri-$V-linux-x64.deb" 2>/dev/null || true
           BIN="src-tauri/target/x86_64-unknown-linux-gnu/release/aoi-roux-trainers"
@@ -391,6 +400,28 @@ jobs:
             grep -q '^networkTimeout=' "$GW" || echo 'networkTimeout=120000' >> "$GW"
             cat "$GW"
           fi
+          # Maven Central 的包会被重定向到 github.com releases，CI 里经常 504；
+          # 用阿里云镜像兜底，并放宽 Gradle HTTP 超时。
+          mkdir -p "$HOME/.gradle"
+          printf '%s\n' \
+            'allprojects {' \
+            '  buildscript { repositories { maven { url "https://maven.aliyun.com/repository/public" }; maven { url "https://maven.aliyun.com/repository/google" }; maven { url "https://maven.aliyun.com/repository/gradle-plugin" } } }' \
+            '  repositories { maven { url "https://maven.aliyun.com/repository/google" }; maven { url "https://maven.aliyun.com/repository/public" } }' \
+            '}' \
+            'settingsEvaluated { settings ->' \
+            '  settings.pluginManagement.repositories {' \
+            '    maven { url "https://maven.aliyun.com/repository/gradle-plugin" }' \
+            '    gradlePluginPortal()' \
+            '  }' \
+            '  settings.dependencyResolutionManagement.repositories {' \
+            '    maven { url "https://maven.aliyun.com/repository/google" }' \
+            '    maven { url "https://maven.aliyun.com/repository/public" }' \
+            '  }' \
+            '}' > "$HOME/.gradle/init.gradle"
+          printf '%s\n' \
+            'org.gradle.internal.http.connectionTimeout=120000' \
+            'org.gradle.internal.http.socketTimeout=120000' >> "$HOME/.gradle/gradle.properties"
+          cat "$HOME/.gradle/init.gradle"
 
       - name: Build APK (release, arm64)
         shell: bash
