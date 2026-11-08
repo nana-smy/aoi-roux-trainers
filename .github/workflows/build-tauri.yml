@@ -513,6 +513,11 @@ jobs:
           echo "--- icons after re-running tauri icon ---"
           md5sum src-tauri/gen/android/app/src/main/res/mipmap-*/ic_launcher*.png 2>/dev/null || true
           ls src-tauri/gen/android/app/src/main/res/mipmap-anydpi-v26 2>/dev/null || true
+          # 模板无条件调用 enableEdgeToEdge()，页面会画到状态栏后面、状态栏图标压住标题栏。
+          # init 之后给 MainActivity 补 insets padding（状态栏 / 刘海 / 输入法都让位）。
+          python3 src-tauri/mobile/android/patch-main-activity.py
+          IDENT=$(node -p "require('./src-tauri/tauri.conf.json').identifier")
+          cat "src-tauri/gen/android/app/src/main/java/$(echo "$IDENT" | tr '.' '/')/MainActivity.kt"
           # Gradle wrapper 默认从 services.gradle.org 拉发行包，CI 里常 10s 超时；
           # 先用带重试的 curl 预下载（优先国内镜像），再把 distributionUrl 指到本地文件。
           GW=src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
