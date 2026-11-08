@@ -82,8 +82,39 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
 
-      # Tauri 打包时会从 github.com releases 下载 NSIS 之类辅助二进制，
-      # 有时会持续 504；NSIS 实在拿不到就降级为免安装 exe + zip。
+      # Tauri 打包时要从 github.com/tauri-apps/binary-releases 下载 NSIS 辅助二进制。
+      # 官方开关 TAURI_BUNDLER_TOOLS_GITHUB_MIRROR：把 https://github.com 前缀换镜像。
+      - name: Probe bundler tools mirror
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $probe = "/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip"
+          $mirrors = @(
+            "https://ghfast.top/https://github.com",
+            "https://ghproxy.net/https://github.com",
+            "https://gh-proxy.com/https://github.com"
+          )
+          foreach ($m in $mirrors) {
+            try {
+              $r = Invoke-WebRequest -Uri ($m + $probe) -Method Head -MaximumRedirection 5 -TimeoutSec 20 -SkipHttpErrorCheck
+              if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 400) {
+                "TAURI_BUNDLER_TOOLS_GITHUB_MIRROR=$m" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+                Write-Host "using mirror: $m"
+                break
+              }
+              Write-Host "mirror unusable ($($r.StatusCode)): $m"
+            } catch {
+              Write-Host "mirror error: $m"
+            }
+          }
+
+      - name: Cache bundler tools
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: tauri-bundler-tools-windows-nsis3-v1
+
+      # 重试 3 次仍拿不到 NSIS 则降级为免安装 exe + zip。
       - name: Build Tauri (NSIS, portable fallback)
         shell: bash
         run: |
@@ -179,6 +210,28 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
 
+      # 官方开关 TAURI_BUNDLER_TOOLS_GITHUB_MIRROR：把 github.com 前缀换成镜像，
+      # 解决 AppImage 的 AppRun/linuxdeploy 从这里下载时 504 的问题。
+      - name: Probe bundler tools mirror
+        shell: bash
+        run: |
+          set -uo pipefail
+          PROBE="/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip"
+          for M in "https://ghfast.top/https://github.com" "https://ghproxy.net/https://github.com" "https://gh-proxy.com/https://github.com"; do
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 25 -I "$M$PROBE" || true)
+            echo "mirror $M -> $CODE"
+            if [ "$CODE" = "200" ] || [ "$CODE" = "302" ]; then
+              echo "TAURI_BUNDLER_TOOLS_GITHUB_MIRROR=$M" >> "$GITHUB_ENV"
+              break
+            fi
+          done
+
+      - name: Cache bundler tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tauri
+          key: tauri-bundler-tools-linux-v1
+
       - name: Build Tauri (AppImage + deb)
         shell: bash
         env:
@@ -232,6 +285,9 @@ jobs:
     if: github.event_name == 'push' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'mac'
     env:
       CI: "false"
+      # 无证书时用 ad-hoc 签名（"ad-hoc signing identity"），
+      # 否则 Apple Silicon 机器上从 Release 下载的 dmg/app 会被系统判定为"已损坏"。
+      APPLE_SIGNING_IDENTITY: "-"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -267,7 +323,7 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
 
-      - name: Build Tauri (dmg + app, unsigned)
+      - name: Build Tauri (dmg + app, ad-hoc signed)
         shell: bash
         run: |
           set -uo pipefail
@@ -275,7 +331,7 @@ jobs:
             if npm run tauri -- build --target aarch64-apple-darwin --bundles app,dmg; then
               exit 0
             fi
-            echo "::warning::attempt $i failed (bundler download 504?), retrying..."
+            echo "::warning::attempt $i failed, retrying..."
             sleep 20
           done
           exit 1
@@ -332,7 +388,6 @@ jobs:
 
       # 不用 android-actions/setup-android@v3：它内部会执行 `sdkmanager tools`，
       # 而新版 cmdline-tools 已移除 tools 包，导致 "Failed to find package 'tools'" 直接红。
-      # 这里直接用 runner 预装的 Android SDK，并用 sdkmanager 自己补齐 NDK / platform。
       - name: Locate Android SDK
         shell: bash
         run: |
