@@ -25,6 +25,10 @@ on:
         required: false
         default: false
         type: boolean
+      tag:
+        description: '手动补发时目标 tag（仅 workflow_dispatch + publish=true 时使用）'
+        required: false
+        type: string
 
 concurrency:
   group: tauri-build-${{ github.ref }}
@@ -693,12 +697,17 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     if: |
-      always() && startsWith(github.ref, 'refs/tags/v') &&
-      (github.event_name == 'push' || github.event.inputs.publish == 'true')
+      always() && (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+      )
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 本 job 不 checkout 仓库，gh 在非 git 目录里会报 "not a git repository"，必须显式指定仓库
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event.inputs.tag }}
     steps:
       - name: Download all Tauri artifacts
         uses: actions/download-artifact@v5
@@ -719,7 +728,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           if [ -z "$(ls -A dist)" ]; then
             echo "No Tauri artifacts produced, nothing to upload."
             exit 0
@@ -733,3 +742,5 @@ jobs:
             gh release create "$TAG" --title "$TAG" --tag "$TAG" --generate-notes 2>/dev/null || true
           fi
           gh release upload "$TAG" dist/* --clobber
+          echo "--- assets on $TAG ---"
+          gh release view "$TAG" --json assets --jq '.assets[].name'
