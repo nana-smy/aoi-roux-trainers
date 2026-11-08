@@ -483,6 +483,14 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
           npm run tauri -- android init --ci
+          # `android init` 会把模板自带的 Tauri 默认图标写进 gen/android 的 res/mipmap-*，
+          # 且不会再读 src-tauri/icons。必须在 init 之后再跑一次 icon，APK 里才是自己的图标。
+          echo "--- icons after init ---"
+          md5sum src-tauri/gen/android/app/src/main/res/mipmap-*/ic_launcher*.png 2>/dev/null || true
+          npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
+          echo "--- icons after re-running tauri icon ---"
+          md5sum src-tauri/gen/android/app/src/main/res/mipmap-*/ic_launcher*.png 2>/dev/null || true
+          ls src-tauri/gen/android/app/src/main/res/mipmap-anydpi-v26 2>/dev/null || true
           # Gradle wrapper 默认从 services.gradle.org 拉发行包，CI 里常 10s 超时；
           # 先用带重试的 curl 预下载（优先国内镜像），再把 distributionUrl 指到本地文件。
           GW=src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
@@ -612,6 +620,12 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
           npm run tauri -- ios init --ci
+          # 同上：`ios init` 会用模板默认图标铺满 Assets.xcassets，init 之后必须再生成一次。
+          echo "--- icons after init ---"
+          ls -l src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset 2>/dev/null | head -30 || true
+          npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
+          echo "--- icons after re-running tauri icon ---"
+          ls -l src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset 2>/dev/null | head -30 || true
 
       # 官方移动端做法：模拟器包 + 设备未签名包都要，方便未签设备真机与模拟器验收。
       - name: Build iOS simulator app
@@ -699,6 +713,6 @@ jobs:
             sleep 15
           done
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --title "$TAG" --generate-notes
+            gh release create "$TAG" --title "$TAG" --tag "$TAG" --generate-notes 2>/dev/null || true
           fi
           gh release upload "$TAG" dist/* --clobber
