@@ -82,7 +82,7 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
 
-      # Tauri 打包时要从 github.com/tauri-apps/binary-releases 下载 NSIS 辅助二进制。
+      # Tauri 打包时要从 github.com/tauri-apps/binary-releases 下载 NSIS / WiX 辅助二进制。
       # 官方开关 TAURI_BUNDLER_TOOLS_GITHUB_MIRROR：把 https://github.com 前缀换镜像。
       - name: Probe bundler tools mirror
         shell: pwsh
@@ -114,22 +114,29 @@ jobs:
           path: ~\AppData\Local\tauri
           key: tauri-bundler-tools-windows-nsis3-v1
 
-      # 重试 3 次仍拿不到 NSIS 则降级为免安装 exe + zip。
-      - name: Build Tauri (NSIS, portable fallback)
+      # Tauri 的 Windows 默认 targets 是 nsis + msi（官方 tauri-action 就是这两个都出），
+      # 这里显式指定，别只出 setup.exe 漏掉 msi。
+      - name: Build Tauri (NSIS + MSI)
         shell: bash
         run: |
           set -uo pipefail
           OK=0
           for i in 1 2 3; do
-            if npm run tauri -- build --target x86_64-pc-windows-msvc --bundles nsis; then
+            if npm run tauri -- build --target x86_64-pc-windows-msvc --bundles nsis,msi; then
               OK=1
               break
             fi
-            echo "::warning::NSIS attempt $i failed (bundler download 504?), retrying..."
+            echo "::warning::bundling attempt $i failed (tool download 504?), retrying..."
             sleep 20
           done
           if [ "$OK" != 1 ]; then
-            echo "::warning::NSIS installer could not be bundled (504 on nsis-3.13.zip); falling back to portable build"
+            echo "::warning::nsis+msi failed; retrying with nsis only"
+            if npm run tauri -- build --target x86_64-pc-windows-msvc --bundles nsis; then
+              OK=1
+            fi
+          fi
+          if [ "$OK" != 1 ]; then
+            echo "::warning::installers could not be bundled; falling back to portable build"
             npm run tauri -- build --target x86_64-pc-windows-msvc --no-bundle
           fi
 
@@ -147,9 +154,15 @@ jobs:
             -DestinationPath "dist/AoiRouxTrainers-tauri-$V-windows-x64-portable.zip" -Force
           $nsis = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" -ErrorAction SilentlyContinue
           if ($nsis) {
-            $nsis | Copy-Item -Destination "dist/" -Force
+            Copy-Item $nsis[0].FullName "dist/AoiRouxTrainers-tauri-$V-windows-x64-setup.exe"
           } else {
-            Write-Host "::warning::no NSIS installer produced, shipping portable exe + zip only"
+            Write-Host "::warning::no NSIS installer produced"
+          }
+          $msi = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi" -ErrorAction SilentlyContinue
+          if ($msi) {
+            Copy-Item $msi[0].FullName "dist/AoiRouxTrainers-tauri-$V-windows-x64.msi"
+          } else {
+            Write-Host "::warning::no MSI produced"
           }
           Get-ChildItem dist | Format-Table Name, Length
 
@@ -182,7 +195,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev build-essential curl wget file \
             libxdo-dev libssl-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf libfuse2 dpkg
+            librsvg2-dev patchelf libfuse2 dpkg rpm
 
       - name: Install dependencies
         run: npm install
@@ -232,7 +245,8 @@ jobs:
           path: ~/.cache/tauri
           key: tauri-bundler-tools-linux-v1
 
-      - name: Build Tauri (AppImage + deb)
+      # Linux 默认 targets 是 deb + rpm + appimage，三个都要出，别漏 rpm。
+      - name: Build Tauri (AppImage + deb + rpm)
         shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
@@ -240,13 +254,19 @@ jobs:
           set -uo pipefail
           OK=0
           for i in 1 2 3; do
-            if npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles appimage,deb; then
+            if npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles appimage,deb,rpm; then
               OK=1
               break
             fi
             echo "::warning::attempt $i failed (bundler download 504?), retrying..."
             sleep 20
           done
+          if [ "$OK" != 1 ]; then
+            echo "::warning::AppImage/rpm bundling failed; retrying with appimage,deb"
+            if npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles appimage,deb; then
+              OK=1
+            fi
+          fi
           if [ "$OK" != 1 ]; then
             echo "::warning::AppImage bundling failed (504 on AppRun); falling back to deb + portable binary"
             npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles deb
@@ -266,6 +286,12 @@ jobs:
           fi
           cp src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb \
              "dist/AoiRouxTrainers-tauri-$V-linux-x64.deb" 2>/dev/null || true
+          if ls src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm > /dev/null 2>&1; then
+            cp src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm \
+               "dist/AoiRouxTrainers-tauri-$V-linux-x64.rpm"
+          else
+            echo "::warning::no rpm produced"
+          fi
           BIN="src-tauri/target/x86_64-unknown-linux-gnu/release/aoi-roux-trainers"
           [ -x "$BIN" ] || BIN="src-tauri/target/x86_64-unknown-linux-gnu/release/Aoi Roux Trainers"
           tar -czf "dist/AoiRouxTrainers-tauri-$V-linux-x64-portable.tar.gz" -C "$(dirname "$BIN")" "$(basename "$BIN")"
@@ -279,9 +305,9 @@ jobs:
           retention-days: 30
 
   macos:
-    name: Tauri · macOS arm64
+    name: Tauri · macOS arm64 + x64
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     if: github.event_name == 'push' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'mac'
     env:
       CI: "false"
@@ -308,7 +334,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -323,33 +349,50 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
 
-      - name: Build Tauri (dmg + app, ad-hoc signed)
+      # 官方示例的 mac 矩阵是 aarch64 + x86_64 两份，这里同样两个 arch 都出。
+      - name: Build Tauri (arm64 + x64, dmg + app, ad-hoc signed)
         shell: bash
         run: |
           set -uo pipefail
-          for i in 1 2 3; do
-            if npm run tauri -- build --target aarch64-apple-darwin --bundles app,dmg; then
-              exit 0
+          for TARGET in aarch64-apple-darwin x86_64-apple-darwin; do
+            OK=0
+            for i in 1 2 3; do
+              if npm run tauri -- build --target "$TARGET" --bundles app,dmg; then
+                OK=1
+                break
+              fi
+              echo "::warning::$TARGET attempt $i failed (tool download 504?), retrying..."
+              sleep 20
+            done
+            if [ "$OK" != 1 ]; then
+              echo "ERROR: $TARGET build failed"
+              exit 1
             fi
-            echo "::warning::attempt $i failed, retrying..."
-            sleep 20
           done
-          exit 1
 
       - name: Package artifacts
         shell: bash
         run: |
           set -euo pipefail
           V=$(node -p "require('./package.json').version")
-          BASE=src-tauri/target/aarch64-apple-darwin/release/bundle
           mkdir -p dist
-          cp "$BASE"/dmg/*.dmg "dist/AoiRouxTrainers-tauri-$V-macos-arm64.dmg"
-          APP=$(find "$BASE/macos" -maxdepth 1 -type d -name "*.app" 2>/dev/null | head -1)
-          if [ -n "$APP" ]; then
-            ditto -c -k --keepParent "$APP" "dist/AoiRouxTrainers-tauri-$V-macos-arm64.app.zip"
-          else
-            echo "::warning::no .app found in $BASE/macos, skipping app.zip"
-          fi
+          for ARCH in arm64 x64; do
+            if [ "$ARCH" = "arm64" ]; then TRIPLE=aarch64-apple-darwin; else TRIPLE=x86_64-apple-darwin; fi
+            BASE="src-tauri/target/$TRIPLE/release/bundle"
+            [ -d "$BASE" ] || { echo "::warning::no bundle for $ARCH"; continue; }
+            DMG=$(ls "$BASE"/dmg/*.dmg 2>/dev/null | head -1 || true)
+            if [ -n "$DMG" ]; then
+              cp "$DMG" "dist/AoiRouxTrainers-tauri-$V-macos-$ARCH.dmg"
+            else
+              echo "::warning::no dmg for $ARCH"
+            fi
+            APP=$(find "$BASE/macos" -maxdepth 1 -type d -name "*.app" 2>/dev/null | head -1 || true)
+            if [ -n "$APP" ]; then
+              ditto -c -k --keepParent "$APP" "dist/AoiRouxTrainers-tauri-$V-macos-$ARCH.app.zip"
+            else
+              echo "::warning::no .app for $ARCH"
+            fi
+          done
           ls -lh dist
 
       - name: Upload artifact
@@ -388,6 +431,7 @@ jobs:
 
       # 不用 android-actions/setup-android@v3：它内部会执行 `sdkmanager tools`，
       # 而新版 cmdline-tools 已移除 tools 包，导致 "Failed to find package 'tools'" 直接红。
+      # 这里直接用 runner 预装的 Android SDK，并用 sdkmanager 自己补齐 NDK / platform。
       - name: Locate Android SDK
         shell: bash
         run: |
@@ -569,6 +613,12 @@ jobs:
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
           npm run tauri -- ios init --ci
 
+      # 官方移动端做法：模拟器包 + 设备未签名包都要，方便未签设备真机与模拟器验收。
+      - name: Build iOS simulator app
+        shell: bash
+        continue-on-error: true
+        run: npm run tauri -- ios build --target aarch64-sim --no-sign
+
       - name: Build iOS (device arm64, unsigned)
         run: npm run tauri -- ios build --target aarch64 --no-sign
 
@@ -594,6 +644,8 @@ jobs:
           SIM=$(find src-tauri/gen/apple -type d -name "*.app" | grep -i sim | head -1 || true)
           if [ -n "${SIM:-}" ]; then
             ( cd "$(dirname "$SIM")" && zip -qry "$GITHUB_WORKSPACE/dist/AoiRouxTrainers-tauri-$V-ios-simulator.app.zip" "$(basename "$SIM")" )
+          else
+            echo "::warning::no simulator .app produced"
           fi
           ls -lh dist
 
