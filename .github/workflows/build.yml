@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+    tags-ignore:
+      - '*-tauri'
   workflow_dispatch:
     inputs:
       platform:
