@@ -68,10 +68,30 @@ npm run tauri dev                   # 需要另开 npm start（devUrl 指向 300
 
 无签名构建（`tauri ios build --target aarch64 --no-sign`），产出未签名 `.ipa`，需要用自己的开发者证书重签后才能装到真机。
 
-## CI 环境适配（首轮实跑后补的几处）
+## CI 环境适配（实跑后补的几处）
 
-Tauri 打包时会从 `github.com/.../releases/download/...` 下载 NSIS、AppRun 等辅助二进制，
-部分 runner 网络下会稳定返回 504，因此工作流做了这些兜底：
+### 1. 打包辅助二进制走镜像（NSIS / AppRun）
+
+Tauri 打包时会从 `github.com/tauri-apps/binary-releases/releases/download/...` 下载
+NSIS 工具链、`AppRun`、`linuxdeploy` 等辅助二进制。这条链路在 CI 里容易返回 504，
+一旦下载失败，NSIS 安装包和 AppImage 就都出不来（只剩免安装包）。
+
+工作流在 Windows / Linux job 里加了一步 **Probe bundler tools mirror**：逐个探测可用的
+GitHub 加速镜像（`ghfast.top` / `ghproxy.net` / `gh-proxy.com`），命中就写入
+`TAURI_BUNDLER_TOOLS_GITHUB_MIRROR`（Tauri 官方支持的环境变量，会替换下载 URL 里的
+`https://github.com` 前缀），同时用 `actions/cache` 缓存 `~/AppData/Local/tauri` 与
+`~/.cache/tauri` 里的工具目录，后续构建直接命中缓存。
+
+效果：Windows 真出 NSIS `-setup.exe`，Linux 真出 `AppImage`（不再走降级）。
+
+### 2. macOS 无证书 = ad-hoc 签名
+
+macOS job 设置 `APPLE_SIGNING_IDENTITY: "-"`（ad-hoc signing）。不加这一条时，
+Apple Silicon 机器上从 Release 下载的 dmg/app 会被 Gatekeeper 直接判为"已损坏"，
+用户必须先 `xattr -dr com.apple.quarantine` 才能打开。加完后系统仍会提示"未认证开发者"，
+但不会再报损坏。要彻底加白仍需 Developer ID 证书 + notarization。
+
+### 3. 其余兜底
 
 | 平台 | 处理 |
 |---|---|
@@ -80,4 +100,4 @@ Tauri 打包时会从 `github.com/.../releases/download/...` 下载 NSIS、AppRu
 | macOS | 用 `--bundles app,dmg`；找不到 `.app` 时只出 dmg |
 | Android | 不用 `android-actions/setup-android@v3`（其内部 `sdkmanager tools` 已被上游移除）；Gradle 发行包先用 curl 预下载到本地再改 `distributionUrl`；Maven 走阿里云镜像 |
 
-另外 Android 的 APK 构建、Linux/Windows 的打包步骤都带重试，编译产物有 cargo 缓存，重试成本很低。
+Android 的 APK 构建、Linux/Windows 的打包步骤都带重试，编译产物有 cargo 缓存，重试成本很低。
