@@ -487,7 +487,22 @@ jobs:
           # 且不会再读 src-tauri/icons。必须在 init 之后再跑一次 icon，APK 里才是自己的图标。
           echo "--- icons after init ---"
           md5sum src-tauri/gen/android/app/src/main/res/mipmap-*/ic_launcher*.png 2>/dev/null || true
-          npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
+          # 自适应图标只有 108dp 画布中间的 72dp 会被显示，直接把整张 logo 铺满会让字显得特别大。
+          # 这里把整张图缩到 62% 再居中放到透明画布上，背景设白色，圆角/圆形遮罩下留出呼吸感。
+          ICON=public/favicon/web-app-manifest-512x512.png
+          FG="$RUNNER_TEMP/android-fg.png"
+          IM=$(command -v magick || command -v convert || true)
+          if [ -n "$IM" ]; then
+            "$IM" "$ICON" -resize 62% -background none -gravity center -extent 512x512 "$FG"
+            printf '{"default":"%s","android_fg":"%s","bg_color":"#ffffff"}' \
+              "$GITHUB_WORKSPACE/$ICON" "$FG" > "$RUNNER_TEMP/icon.json"
+            npm run tauri -- icon "$RUNNER_TEMP/icon.json"
+            echo "--- foreground trim (应远小于 108dp 画布) ---"
+            "$IM" "$FG" -trim info: 2>&1 || true
+          else
+            echo "::warning::ImageMagick not found, falling back to plain icon"
+            npm run tauri -- icon "$ICON"
+          fi
           echo "--- icons after re-running tauri icon ---"
           md5sum src-tauri/gen/android/app/src/main/res/mipmap-*/ic_launcher*.png 2>/dev/null || true
           ls src-tauri/gen/android/app/src/main/res/mipmap-anydpi-v26 2>/dev/null || true
