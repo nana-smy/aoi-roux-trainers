@@ -1,3 +1,4 @@
+
 # Tauri 构建（五平台）
 
 本仓库同时存在两套互相独立的打包流水线，互不影响：
@@ -18,11 +19,21 @@
 
 ## 产物命名
 
-- `AoiRouxTrainers-tauri-<版本>-windows-x64-portable.zip` / `...-windows-x64.exe` / NSIS 安装包
-- `AoiRouxTrainers-tauri-<版本>-linux-x64.AppImage` / `...-linux-x64.deb` / `...-linux-x64-portable.tar.gz`
+对照官方 `tauri-action` 的默认产物清单（Windows = nsis + msi，Linux = appimage + deb + rpm，macOS = arm64 + x64），一个都不少：
+
+- `AoiRouxTrainers-tauri-<版本>-windows-x64-setup.exe`（NSIS 安装包）
+- `AoiRouxTrainers-tauri-<版本>-windows-x64.msi`（WiX MSI 安装包）
+- `AoiRouxTrainers-tauri-<版本>-windows-x64-portable.zip` / `...-windows-x64.exe`（免安装）
+- `AoiRouxTrainers-tauri-<版本>-linux-x64.AppImage`
+- `AoiRouxTrainers-tauri-<版本>-linux-x64.deb`
+- `AoiRouxTrainers-tauri-<版本>-linux-x64.rpm`
+- `AoiRouxTrainers-tauri-<版本>-linux-x64-portable.tar.gz`
 - `AoiRouxTrainers-tauri-<版本>-macos-arm64.dmg` / `...-macos-arm64.app.zip`
+- `AoiRouxTrainers-tauri-<版本>-macos-x64.dmg` / `...-macos-x64.app.zip`（Intel Mac）
 - `AoiRouxTrainers-tauri-<版本>-android-arm64.apk`
-- `AoiRouxTrainers-tauri-<版本>-ios-unsigned.ipa`
+- `AoiRouxTrainers-tauri-<版本>-ios-unsigned.ipa` / `...-ios-simulator.app.zip`
+
+Linux arm64 需要 `ubuntu-22.04-arm` runner，仅公开仓库可用；本仓库为 private，故暂不出 arm64 包。
 
 ## 本地开发
 
@@ -67,6 +78,7 @@ npm run tauri dev                   # 需要另开 npm start（devUrl 指向 300
 ## iOS
 
 无签名构建（`tauri ios build --target aarch64 --no-sign`），产出未签名 `.ipa`，需要用自己的开发者证书重签后才能装到真机。
+模拟器包（`aarch64-sim`）另外产出 `...-ios-simulator.app.zip`，方便在 Xcode 模拟器里直接验收。
 
 ## CI 环境适配（实跑后补的几处）
 
@@ -82,7 +94,7 @@ GitHub 加速镜像（`ghfast.top` / `ghproxy.net` / `gh-proxy.com`），命中�
 `https://github.com` 前缀），同时用 `actions/cache` 缓存 `~/AppData/Local/tauri` 与
 `~/.cache/tauri` 里的工具目录，后续构建直接命中缓存。
 
-效果：Windows 真出 NSIS `-setup.exe`，Linux 真出 `AppImage`（不再走降级）。
+效果：Windows 真出 NSIS `-setup.exe` 与 `.msi`，Linux 真出 `AppImage` 与 `.rpm`（不再走降级）。
 
 ### 2. macOS 无证书 = ad-hoc 签名
 
@@ -95,9 +107,9 @@ Apple Silicon 机器上从 Release 下载的 dmg/app 会被 Gatekeeper 直接判
 
 | 平台 | 处理 |
 |---|---|
-| Windows | NSIS 打包重试 3 次；仍失败则 `--no-bundle` 出免安装 exe + zip |
-| Linux | AppImage 打包重试 3 次；仍失败则只出 `.deb` + 免安装 `tar.gz` |
-| macOS | 用 `--bundles app,dmg`；找不到 `.app` 时只出 dmg |
+| Windows | `--bundles nsis,msi`，重试 3 次；仍失败退到 `nsis`，再失败则 `--no-bundle` 出免安装 exe + zip |
+| Linux | `--bundles appimage,deb,rpm`，重试 3 次；仍失败退到 `appimage,deb`，再失败只出 `.deb` + 免安装 `tar.gz` |
+| macOS | 两个架构各用 `--bundles app,dmg` 构建，任一架构失败即判红；找不到 `.app` 时只出 dmg |
 | Android | 不用 `android-actions/setup-android@v3`（其内部 `sdkmanager tools` 已被上游移除）；Gradle 发行包先用 curl 预下载到本地再改 `distributionUrl`；Maven 走阿里云镜像 |
 
 Android 的 APK 构建、Linux/Windows 的打包步骤都带重试，编译产物有 cargo 缓存，重试成本很低。
