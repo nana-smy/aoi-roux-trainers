@@ -82,7 +82,7 @@ jobs:
           npm pkg set scripts.tauri=tauri
           npm run tauri -- icon public/favicon/web-app-manifest-512x512.png
 
-      # Tauri 打包时要从 github.com/tauri-apps/binary-releases 下载 NSIS 辅助二进制。
+      # Tauri 打包时要从 github.com/tauri-apps/binary-releases 下载 NSIS / WiX 辅助二进制。
       # 官方开关 TAURI_BUNDLER_TOOLS_GITHUB_MIRROR：把 https://github.com 前缀换镜像。
       - name: Probe bundler tools mirror
         shell: pwsh
@@ -305,9 +305,9 @@ jobs:
           retention-days: 30
 
   macos:
-    name: Tauri · macOS arm64
+    name: Tauri · macOS arm64 + x64
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     if: github.event_name == 'push' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'mac'
     env:
       CI: "false"
@@ -644,6 +644,12 @@ jobs:
           echo "--- icons after re-running tauri icon ---"
           ls -l src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset 2>/dev/null | head -30 || true
 
+      # 官方移动端做法：模拟器包 + 设备未签名包都要，方便未签设备真机与模拟器验收。
+      - name: Build iOS simulator app
+        shell: bash
+        continue-on-error: true
+        run: npm run tauri -- ios build --target aarch64-sim --no-sign
+
       - name: Build iOS (device arm64, unsigned)
         run: npm run tauri -- ios build --target aarch64 --no-sign
 
@@ -669,6 +675,8 @@ jobs:
           SIM=$(find src-tauri/gen/apple -type d -name "*.app" | grep -i sim | head -1 || true)
           if [ -n "${SIM:-}" ]; then
             ( cd "$(dirname "$SIM")" && zip -qry "$GITHUB_WORKSPACE/dist/AoiRouxTrainers-tauri-$V-ios-simulator.app.zip" "$(basename "$SIM")" )
+          else
+            echo "::warning::no simulator .app produced"
           fi
           ls -lh dist
 
@@ -722,6 +730,6 @@ jobs:
             sleep 15
           done
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --title "$TAG" --generate-notes
+            gh release create "$TAG" --title "$TAG" --tag "$TAG" --generate-notes 2>/dev/null || true
           fi
           gh release upload "$TAG" dist/* --clobber
