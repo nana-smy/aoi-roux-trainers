@@ -2,10 +2,11 @@ name: Tauri Build
 
 # 与 build.yml（Electron + Capacitor）完全独立：不修改、不依赖原有工作流。
 # 同样覆盖五平台：Windows / Linux / macOS / Android / iOS。
+# 只吃 `v*-tauri` 后缀的 tag：普通 v1.12.0 只触发 Electron 那条，两条流水线互不干扰。
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*-tauri'
   workflow_dispatch:
     inputs:
       platform:
