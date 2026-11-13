@@ -41,6 +41,62 @@ npm start
 
 ```
 
+## 📦 桌面与移动端打包 (Desktop & Mobile Builds)
+
+除了网页版，仓库里还有两条**互不干扰**的打包流水线：
+
+| 工作流 | 技术栈 | 产物 |
+| --- | --- | --- |
+| `build.yml`（`Build & Release`） | Electron 31 + electron-builder + Capacitor | 原有桌面/移动端打包 |
+| `build-tauri.yml`（`Tauri Build`） | Tauri v2 | Windows / Linux / macOS / Android / iOS 五平台 |
+
+### 发布 tag 约定
+
+两个工作流靠 tag 后缀区分，互不触发：
+
+| Tag 形式 | 触发 | 说明 |
+| --- | --- | --- |
+| `v1.12.0` | 仅 Electron 流水线 | 普通版本 |
+| `v1.12.0-tauri` | 仅 Tauri 流水线 | 五平台安装包，Release 标题即 tag 名 |
+
+手工补发（不改 tag、直接覆盖已有 Release 资产）：在 Actions 里手动运行 `Tauri Build`，`platform=all`、`publish=true`，并在 `tag` 里填目标 tag。
+
+### Tauri 版产物清单
+
+| 平台 | 文件 | 说明 |
+| --- | --- | --- |
+| Windows x64 | `-windows-x64-setup.exe` | NSIS 安装包 |
+| | `-windows-x64.msi` | MSI 安装包 |
+| | `-windows-x64.exe` / `-windows-x64-portable.zip` | 免安装单文件 / 便携包 |
+| Linux x64 | `-linux-x64.AppImage` | 通用免安装包 |
+| | `-linux-x64.deb` / `-linux-x64.rpm` | Debian / Fedora 安装包 |
+| | `-linux-x64-portable.tar.gz` | 便携包 |
+| macOS | `-macos-arm64.dmg` / `-macos-x64.dmg` | Apple Silicon / Intel 各一份 |
+| | `-macos-*.app.zip` | 直接解压得到 `.app` |
+| Android | `-android-arm64.apk` | release 包，固定 keystore 签名，可直接覆盖升级 |
+| iOS | `-ios-unsigned.ipa` | 未签名，需自行用证书/描述文件重签 |
+| | `-ios-simulator.app.zip` | 模拟器包，方便无证书验收 |
+
+> macOS 产物为 ad-hoc 签名（无开发者证书）。首次打开若提示“已损坏/无法验证”，右键 → 打开，或 `xattr -dr com.apple.quarantine <App>.app`。
+
+### 打包相关的几个细节
+
+* **图标**：`android init` / `ios init` 会用模板默认图标铺满生成目录且不再读 `src-tauri/icons`，所以流水线在 init 之后会再执行一次 `tauri icon`。
+* **Android 图标比例**：自适应图标 108dp 画布只显示中间 72dp，整张 logo 铺满会显得字特别大，因此前景层先缩到 70% 再居中放到透明画布上（`FG_SCALE`）。
+* **Android 状态栏**：Tauri 模板生成的 `MainActivity.kt` 会无条件 `enableEdgeToEdge()`，内容会画到状态栏下面。流水线用 `src-tauri/mobile/android/patch-main-activity.py` 给根视图补 `WindowInsets` padding（状态栏 / 刘海 / 输入法都让位），保留 edge-to-edge 但不与状态栏重叠。
+* **下载通道**：NSIS / AppImage 的辅助二进制从 github.com 下载在 CI 里经常 504，流水线会探测 `ghfast.top` 等镜像并写入 `TAURI_BUNDLER_TOOLS_GITHUB_MIRROR`，同时缓存工具目录。
+
+### 本地构建 Tauri 版
+
+```bash
+npm install
+npm install -g @tauri-apps/cli@^2
+npm run build           # 先出前端产物（frontendDist 指向 build/）
+npm run tauri build     # 想做开发调试则用 npm run tauri dev
+```
+
+移动端需要额外 SDK（Android SDK/NDK、Xcode）：`npm run tauri android init` / `npm run tauri ios init` 之后用 Android Studio 或 Xcode 构建，具体步骤与 CI 里的做法见 [TAURI.md](./TAURI.md)。
+
 ## ⚠️ 交流与指教
 
 由于个人的魔方与代码资历尚浅，原版训练器中许多高阶、硬核的功能至今也还在努力摸索中。在微调代码的过程中难免会有新 Bug。
@@ -55,7 +111,3 @@ npm start
 ---
 
 *Designed and optimized with ❤️ by polo-aoi.*
-
-```
-
-```
