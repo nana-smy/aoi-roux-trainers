@@ -48,7 +48,11 @@ function createWindow() {
           }
         });
     });
-    mainWindow.webContents.openDevTools();
+    // DevTools 默认不再自动打开：常开会把日志对象、渲染层与 DOM 快照全部留驻，
+    // 是 dev 模式下内存“只涨不降”的直接来源之一。需要时用 DEVTOOLS=1 打开。
+    if (process.env.DEVTOOLS === '1' || process.env.DEVTOOLS === 'true') {
+      mainWindow.webContents.openDevTools();
+    }
   } else {
     // In production, load the built React app
     const buildPath = path.join(__dirname, '..', 'build', 'index.html');
