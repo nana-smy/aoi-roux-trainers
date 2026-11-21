@@ -2,9 +2,8 @@ import React, { useEffect } from 'react'
 
 import { FaceletCubeT, Face } from "../lib/Defs";
 import * as THREE from 'three';
-import { arrayEqual } from '../lib/Math';
 import chroma from 'chroma-js';
-// @ts-ignore - chroma.mix is a module-level function present in runtime
+// @ts-ignore - chroma.mix is a module-level function present at runtime
 import { OrbitControls } from '../lib/three/OrbitControls';
 
 type Config = {
@@ -17,17 +16,6 @@ type Config = {
     obscureCornerMask?: boolean
 }
 let { Vector3 } = THREE
-
-/*
-How to propagate control of keypress ..? maybe not here, in the app.
-
-Let's look at click analogy: if a user click on sub-component,
-that message should be propagated upwards to the parent.
-
-That is, "keydown" should transform to some kind of message, e.g. the resulting cube state
-to be passed to the App, which then decides whether to trigger state change or let the cube keep being solved
-
-*/
 
 type AxesInfo = [THREE.Vector3, THREE.Euler]
 const TAU = Math.PI * 2;
@@ -78,11 +66,6 @@ const roundedFace = ((rounded?: number[], cornerRadius?: number, ) => {
         cornerVertices = cornerVertices.map(x => x.clone().applyAxisAngle(new Vector3(0, 0, 1), 0.5 * Math.PI))
         squareCorner.applyAxisAngle(new Vector3(0, 0, 1), 0.5 * Math.PI)
     }
-    //vertices.push(new Vector3(0, 0, 0))
-
-    //let vertices_float32 = new Float32Array( vertices.length * 3)
-    //let vertices_attr = new THREE.BufferAttribute(vertices_float32, 3).copyVector3sArray( vertices)
-    // console.log(vertices_attr)
     let faces = []
     for (let i = 0; i< vertices.length; i++) {
         let i1 = (i + 1) % vertices.length;
@@ -115,6 +98,12 @@ const getCameraPosFromState = function (cstate: CameraState) : [number[], THREE.
         default: return [cameraPosUBR, upVecLookingDownUB]
     }
 }
+
+// NOTE: 每个 CubeSim 实例都拥有自己的 painter / WebGLRenderer。
+// 原实现把 painter 缓存成模块级单例：多实例共用一个 canvas（TrackerView 一次渲染
+// 两个 CubeSim，第二个会把第一个的 canvas 搬进自己容器），且组件卸载时从不销毁，
+// renderer / rAF 循环 / geometry 全部留在内存里 —— 这是 Electron 与 Tauri 版本
+// 内存持续上涨的根因。
 const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
     let { width, height, colorScheme, mode, faces, theme, enableControl} = config
     let hintDistance = config.hintDistance || 3
@@ -122,7 +111,6 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
 
     mode = mode || "FRU"
     let facesToReveal = faces || [Face.L, Face.B, Face.D]
-    //facesToReveal = [Face.L]
 
     const scene = new THREE.Scene()
     const angle = 50
@@ -134,8 +122,7 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setSize(width, height, true);
-    //renderer.setViewport( 0, 0, width * window.devicePixelRatio, height * window.devicePixelRatio);
-    renderer.setClearColor(bgColor) // #70788a') //#5a606e') // '#373B43') // '#eeeeee')
+    renderer.setClearColor(bgColor)
     renderer.setPixelRatio(window.devicePixelRatio)
     let controls = new OrbitControls( camera, renderer.domElement );
     controls.enabled = !!config.enableControl
@@ -151,19 +138,27 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
                           cameraPositionRaw[2] * scale) :
         new THREE.Vector3(0 / 1.1, 3 / 1.1, 3 / 1.1)
 
-    //console.log("Setting camera up ", cameraUp, " camera pos", cameraPosition)
     camera.up.copy(cameraUp)
     camera.position.copy(cameraPosition)
     camera.aspect = width / height;
     camera.lookAt(new THREE.Vector3(0, 0, 0))
 
-    let stickers_tmpl: THREE.Mesh[], stickerwrap_tmpl: THREE.Mesh
-    let obscured_stickers_tmpl: THREE.Group[]
+    // 模板（sticker / hint 的 geometry 与 material）只建一次；之后每次重绘只是
+    // clone 出新 Mesh（共享 geometry + material，对象很小，交给 GC）。旧实现每次
+    // 重绘都新建上百个 BufferGeometry 与 14 个材质，且从不 dispose。
+    let stickers_tmpl: THREE.Mesh[] = []
+    let stickerwrap_tmpl: THREE.Mesh
+    let obscured_stickers_tmpl: THREE.Group[] = []
+    let hint_mesh_tmpl: THREE.Mesh[] = []
+    let obscured_hint_mesh_tmpl: THREE.Group[] = []
     let greyMaterial: THREE.MeshBasicMaterial
 
-    const geos : THREE.BufferGeometry[] = []; // new THREE.PlaneGeometry(0.89 * mag * 2, 0.89 * mag * 2)
-    const geo_border = new THREE.PlaneGeometry(2.0, 2.0)//1.0 * mag * 2, 1.0 * mag * 2)
+    const ownedGeos: THREE.BufferGeometry[] = []
+    const ownedMats: THREE.Material[] = []
+    let templatesBuilt = false
+    let templateColorKey = ""
 
+    const geo_border = new THREE.PlaneGeometry(2.0, 2.0)
     let materials_border = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.FrontSide })
     stickerwrap_tmpl = (() => {
         let mesh = new THREE.Mesh(geo_border, materials_border)
@@ -175,13 +170,12 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
     const corner_radius = 0.4
     const hint_scale = 0.95
 
-    // Get fill scale based on sticker width setting
     const getFillScale = (widthSetting?: string) => {
         switch (widthSetting) {
             case "Thin": return 0.96
             case "Medium": return 0.92
             case "Thick": return 0.88
-            default: return 0.92 // Default to Medium
+            default: return 0.92
         }
     }
     const fill_scale = getFillScale(config.obscureStickerWidth)
@@ -197,18 +191,33 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
         [0, 1, 0, 0]
     ];
 
-    function drawCube(faces: FaceletCubeT, colorScheme: Array<string>): THREE.Group {
-        //console.log("update color scheme ", colorScheme_)
+    const disposeTemplates = () => {
+        ownedGeos.forEach(g => g.dispose())
+        ownedGeos.length = 0
+        ownedMats.forEach(m => m.dispose())
+        ownedMats.length = 0
+        templatesBuilt = false
+        templateColorKey = ""
+    }
+
+    function buildTemplates(colorScheme_: Array<string>) {
+        const colorKey = colorScheme_.join("|")
+        if (templatesBuilt && templateColorKey === colorKey) return
+        disposeTemplates()
+        templateColorKey = colorKey
+        templatesBuilt = true
+
         let materials = Array(7).fill(0).map((_, i) => {
-            let mat = new THREE.MeshBasicMaterial({ color: colorScheme[i], side: THREE.DoubleSide });
+            let mat = new THREE.MeshBasicMaterial({ color: colorScheme_[i], side: THREE.DoubleSide });
             mat.alphaTest = alpha;
+            ownedMats.push(mat)
             return mat
         })
 
         stickers_tmpl = materials.map((mat) => {
             return rounded_patterns.map(pattern => {
                 let geo = roundedFace(pattern, corner_radius)
-                geos.push(geo)
+                ownedGeos.push(geo)
                 let mesh = new THREE.Mesh(geo, mat)
                 mesh.scale.set(sticker_scale, sticker_scale, sticker_scale)
                 mesh.setRotationFromEuler(axesInfo[0][1])
@@ -216,26 +225,23 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
             })
         }).flat()
 
-        // Create obscured stickers with grey fill and colored border
-        greyMaterial = new THREE.MeshBasicMaterial({ color: colorScheme[6], side: THREE.DoubleSide, alphaTest: alpha })
+        greyMaterial = new THREE.MeshBasicMaterial({ color: colorScheme_[6], side: THREE.DoubleSide, alphaTest: alpha })
+        ownedMats.push(greyMaterial)
 
-        obscured_stickers_tmpl = materials.map((mat, colorIndex) => {
+        obscured_stickers_tmpl = materials.map((mat) => {
             return rounded_patterns.map(pattern => {
-                // Create a group for the obscured sticker
                 const group = new THREE.Group()
 
-                // Grey fill (slightly smaller and behind)
                 let fillGeo = roundedFace(pattern, corner_radius)
-                geos.push(fillGeo)
+                ownedGeos.push(fillGeo)
                 let fillMesh = new THREE.Mesh(fillGeo, greyMaterial)
                 fillMesh.scale.set(sticker_scale * fill_scale, sticker_scale * fill_scale, sticker_scale * fill_scale)
                 fillMesh.setRotationFromEuler(axesInfo[0][1])
-                fillMesh.position.y = 0.01 // Small offset to prevent z-fighting
+                fillMesh.position.y = 0.01
                 group.add(fillMesh)
 
-                // Colored border (original size)
                 let borderGeo = roundedFace(pattern, corner_radius)
-                geos.push(borderGeo)
+                ownedGeos.push(borderGeo)
                 let borderMesh = new THREE.Mesh(borderGeo, mat)
                 borderMesh.scale.set(sticker_scale, sticker_scale, sticker_scale)
                 borderMesh.setRotationFromEuler(axesInfo[0][1])
@@ -245,48 +251,46 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
             })
         }).flat()
 
-
-
-        let hint_mesh = Array(7).fill(0).map((_, i) => {
+        hint_mesh_tmpl = Array(7).fill(0).map((_, i) => {
             let color = (theme === "bright")
-                ? chroma.mix(colorScheme[i], 'white', 0.18).hex()
-                : chroma.mix(colorScheme[i], 'black', 0.35).hex()
+                ? chroma.mix(colorScheme_[i], 'white', 0.18).hex()
+                : chroma.mix(colorScheme_[i], 'black', 0.35).hex()
 
             let mat = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
+            ownedMats.push(mat)
 
             let geo = roundedFace([1,1,1,1], corner_radius)
-            geos.push(geo)
+            ownedGeos.push(geo)
             let mesh = new THREE.Mesh(geo, mat)
             mesh.scale.set(hint_scale, hint_scale, hint_scale)
             mesh.setRotationFromEuler(axesInfo[0][1])
             return mesh
         })
 
-        // Create obscured hint stickers with grey fill and colored border
-        let obscured_hint_mesh = Array(7).fill(0).map((_, i) => {
-            // Create a group for the obscured hint sticker
+        obscured_hint_mesh_tmpl = Array(7).fill(0).map((_, i) => {
             const group = new THREE.Group()
 
-            // Grey fill (slightly smaller)
             let fillGeo = roundedFace([1,1,1,1], corner_radius)
-            geos.push(fillGeo)
-            let fillMesh = new THREE.Mesh(fillGeo, hint_mesh[6].material)
+            ownedGeos.push(fillGeo)
+            let fillMesh = new THREE.Mesh(fillGeo, hint_mesh_tmpl[6].material)
             fillMesh.scale.set(hint_scale * fill_scale, hint_scale * fill_scale, hint_scale * fill_scale)
             fillMesh.setRotationFromEuler(axesInfo[0][1])
-            fillMesh.position.y = -0.01 // Small offset to prevent z-fighting
+            fillMesh.position.y = -0.01
             group.add(fillMesh)
 
-            // Colored border (original size)
             let borderGeo = roundedFace([1,1,1,1], corner_radius)
-            geos.push(borderGeo)
-            let borderMesh = new THREE.Mesh(borderGeo, hint_mesh[i].material)
+            ownedGeos.push(borderGeo)
+            let borderMesh = new THREE.Mesh(borderGeo, hint_mesh_tmpl[i].material)
             borderMesh.scale.set(hint_scale, hint_scale, hint_scale)
             borderMesh.setRotationFromEuler(axesInfo[0][1])
             group.add(borderMesh)
 
             return group
         })
+    }
 
+    function drawCube(faces_: FaceletCubeT, colorScheme_: Array<string>): THREE.Group {
+        buildTemplates(colorScheme_)
 
         const cube = new THREE.Group();
         for (let i = 0; i < 6; i++) {
@@ -297,13 +301,12 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
             for (let z = -1; z <= 1; z++) {
                 for (let x = -1; x <= 1; x++) {
                     let idx = (z + 1) * 3 + (x + 1)
-                    let colorIndex = faces[i][idx]
+                    let colorIndex = faces_[i][idx]
                     let isLRColor = colorIndex === Face.L || colorIndex === Face.R
                     let isCorner = (x === -1 || x === 1) && (z === -1 || z === 1)
                     let shouldObscure = config.obscureNonLR && !isLRColor
                     let shouldMaskCorner = config.obscureCornerMask && isCorner && !isLRColor
 
-                    // If corner masking is on, replace non-LR corner colors with grey
                     let effectiveColorIndex = shouldMaskCorner ? 6 : colorIndex
 
                     const curr_tmpl = (shouldObscure && !shouldMaskCorner) ? obscured_stickers_tmpl[colorIndex * 9 + idx] : stickers_tmpl[effectiveColorIndex * 9 + idx]
@@ -314,12 +317,12 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
                     sticker.position.copy(new THREE.Vector3(x * 2, 3, z * 2))
                     stickerwrap.position.copy(new THREE.Vector3(x * 2, 3 - eps, z * 2))
 
-                    if (facesToReveal.indexOf(i) > -1) { // (i === 5 && mode === "UF")) {
-                        let isLRColor = colorIndex === Face.L || colorIndex === Face.R
-                        let shouldObscureHint = config.obscureNonLR && !isLRColor
+                    if (facesToReveal.indexOf(i) > -1) {
+                        let isLRColorHint = colorIndex === Face.L || colorIndex === Face.R
+                        let shouldObscureHint = config.obscureNonLR && !isLRColorHint
                         const stickerhint = (shouldObscureHint && !shouldMaskCorner) ?
-                            obscured_hint_mesh[faces[i][idx]].clone() :
-                            hint_mesh[effectiveColorIndex].clone()
+                            obscured_hint_mesh_tmpl[faces_[i][idx]].clone() :
+                            hint_mesh_tmpl[effectiveColorIndex].clone()
                         stickerhint.position.copy(new THREE.Vector3(x * 2, 3 + hintDistance, z * 2))
                         cubie.add(stickerhint)
                     }
@@ -352,22 +355,24 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
     }
     animate()
 
-    const updateCubeAndColor = (cube: FaceletCubeT, colorScheme: Array<string>) => {
+    const updateCubeAndColor = (cube: FaceletCubeT, colorScheme_: Array<string>) => {
         scene.remove(cubeG)
-        cubeG.clear()
-        cubeG = drawCube(cube, colorScheme)
+        cubeG.clear()           // 分离旧 Mesh（geometry / material 与模板共享，不重复分配）
+        cubeG = drawCube(cube, colorScheme_)
         scene.add(cubeG)
         renderer.render(scene, camera)
         return renderer
     }
 
     const cleanup = () => {
-        geos.forEach(g => g.dispose())
-        materials_border.dispose()
-        geo_border.dispose()
-        greyMaterial.dispose()
-        scene.remove(cubeG)
         cancelAnimationFrame(frameID)
+        scene.remove(cubeG)
+        cubeG.clear()
+        disposeTemplates()
+        geo_border.dispose()
+        materials_border.dispose()
+        if ((controls as any).dispose) (controls as any).dispose()
+        renderer.dispose()
     }
     return {
         updateCubeAndColor,
@@ -375,38 +380,7 @@ const redraw_cube = function (cube: FaceletCubeT, config: ConfigT ) {
         cleanupFunc: cleanup,
         renderControls: render
     }
-    //let defaultColorScheme = [ 0x00ff00, 0x0000ff, 0xff0000,0xff8800,0xffff00, 0xffffff]
 }
-
-let drawCube = (function(){
-    let config_cache : ConfigT | null = null
-    let painter : Painter | null = null
-    let func = (cube: FaceletCubeT, config: ConfigT) => {
-        if (config_cache === null) {
-            painter?.cleanupFunc()
-
-            painter = redraw_cube(cube, config)
-            config_cache = config
-            return painter
-        }
-        else if (config.width === config_cache.width && config.height === config_cache.height &&
-            arrayEqual(config.faces || [], config_cache.faces || []) && config.theme === config_cache.theme &&
-            config.hintDistance === config_cache.hintDistance && config.enableControl === config_cache.enableControl
-            && config.cameraState === config_cache.cameraState && config.obscureNonLR === config_cache.obscureNonLR
-            && config.obscureStickerWidth === config_cache.obscureStickerWidth && config.obscureCornerMask === config_cache.obscureCornerMask) {
-
-            painter?.updateCubeAndColor(cube, config.colorScheme)
-            config_cache = config
-            return painter!
-        } else {
-            painter?.cleanupFunc()
-            painter = redraw_cube(cube, config)
-            config_cache = config
-            return painter!
-        }
-    }
-    return func
-})
 
 type Painter = {
     updateCubeAndColor: (cube: FaceletCubeT, scheme: Array<string>) => THREE.WebGLRenderer,
@@ -418,22 +392,62 @@ type Painter = {
 
 function CubeSim(props: Config) {
     const mount = React.useRef<HTMLDivElement | null>(null)
+    const painterRef = React.useRef<Painter | null>(null)
+    const firstDraw = React.useRef(true)
     const [cameraState, setCameraState] = React.useState<CameraState>(CameraState.HOME);
     let { width, height, colorScheme, facesToReveal, hintDistance, theme, obscureNonLR, obscureStickerWidth, obscureCornerMask} = props
-    let cubePainter = React.useMemo(drawCube, [])
-    // obscureNonLR defaults to false for non-SS modes, true only for SS mode when enabled
-
     const enableControl = true
 
-    let painter = cubePainter(props.cube, {
-            width, height, colorScheme, faces: facesToReveal, theme, hintDistance, enableControl,
-            cameraState, obscureNonLR: obscureNonLR, obscureStickerWidth: obscureStickerWidth, obscureCornerMask: obscureCornerMask})
+    // facesToReveal 每次渲染都是新数组，用字符串做依赖比较，避免 effect 反复重建 painter
+    const facesKey = (facesToReveal || []).join(",")
 
-    useEffect( () => {
-        let dom = window //painter.getRenderer().domElement
-        function downHandler ( event: KeyboardEvent){
-            let suppressLogging = 0
-            // intercept keyboard event for local control
+    // 结构性配置变化才重建 painter（尺寸 / 视角 / 主题 / 面 / 遮挡设置）
+    useEffect(() => {
+        const el = mount.current
+        if (!el) return
+
+        const painter = redraw_cube(props.cube, {
+            width, height, colorScheme, faces: facesToReveal, theme, hintDistance, enableControl,
+            cameraState, obscureNonLR, obscureStickerWidth, obscureCornerMask
+        })
+        painterRef.current = painter
+        firstDraw.current = true
+
+        const canvas = painter.getRenderer().domElement
+        el.appendChild(canvas)
+
+        return () => {
+            painterRef.current = null
+            if (canvas.parentNode === el) el.removeChild(canvas)
+            painter.cleanupFunc()
+            const renderer = painter.getRenderer()
+            renderer.dispose()
+            const gl = renderer.getContext()
+            if (gl && gl.getExtension) {
+                const ext = gl.getExtension('WEBGL_lose_context')
+                if (ext) ext.loseContext()
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [width, height, facesKey, theme, hintDistance, cameraState, obscureNonLR, obscureStickerWidth, obscureCornerMask])
+
+    // cube / 配色变化的增量重绘：复用模板，不新建 geometry / material
+    useEffect(() => {
+        const painter = painterRef.current
+        if (!painter) return
+        if (firstDraw.current) {
+            firstDraw.current = false
+            return
+        }
+        painter.updateCubeAndColor(props.cube, colorScheme)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [props.cube, colorScheme])
+
+    // 键盘控制：监听挂在 window 上，卸载时成对移除。旧实现里 cleanup 把 keyup 又
+    // add 了一遍（写成了 addEventListener），且 effect 没有依赖数组，导致每次渲染
+    // 都多一个永不释放的监听 —— 内存持续上涨的另一个来源。
+    useEffect(() => {
+        function downHandler (event: KeyboardEvent){
             if (event.key === "1") {
                 setCameraState(CameraState.PEEK_DFL);
             }
@@ -449,31 +463,17 @@ function CubeSim(props: Config) {
             if (event.key === "0") {
                 setCameraState(CameraState.PEEK_UBR);
             }
-            else {
-                suppressLogging = 1
-            }
-            if (~suppressLogging) {
-                //console.log("CubeSim camera rotateion with key ", event.key)
-            }
         }
-        function upHandler (event: KeyboardEvent) {
+        function upHandler () {
             setCameraState(CameraState.HOME);
         }
-        dom.addEventListener('keydown', downHandler);
-        dom.addEventListener('keyup', upHandler);
+        window.addEventListener('keydown', downHandler);
+        window.addEventListener('keyup', upHandler);
         return () => {
-            dom.removeEventListener('keydown', downHandler);
-            dom.addEventListener('keyup', upHandler);
+            window.removeEventListener('keydown', downHandler);
+            window.removeEventListener('keyup', upHandler);
         };
-    });
-
-    useEffect( () => {
-        let dom = mount.current!
-        dom.appendChild(painter.getRenderer().domElement) //renderer.domElement)
-        return () => {
-            dom.removeChild(painter.getRenderer().domElement)
-        }
-    })
+    }, []);
 
     return <div
         ref={mount}
